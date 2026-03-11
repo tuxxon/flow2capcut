@@ -1,0 +1,648 @@
+/* ============================================
+   Scene Detail Modal
+   ============================================ */
+
+.scene-detail-modal .ref-detail-content {
+  display: flex;
+  gap: 20px;
+}
+
+.scene-detail-modal .form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.scene-detail-modal .form-group.half {
+  flex: 1;
+}
+
+.scene-detail-modal .time-display {
+  display: inline-block;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* Tags row - 3 items */
+.scene-detail-modal .tags-row {
+  display: flex;
+  gap: 12px;
+}
+
+.scene-detail-modal .form-group.third {
+  flex: 1;
+}
+
+.scene-detail-modal .form-group.third label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 자막 입력 필드 */
+.scene-detail-modal .subtitle-input {
+  background: rgba(255, 193, 7, 0.05);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.scene-detail-modal .subtitle-input:focus {
+  border-color: #ffc107;
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.1);
+}
+
+/* Action buttons half width */
+.action-buttons .btn-primary.half,
+.action-buttons .btn-success.half {
+  flex: 1;
+}
+
+/* Success button (CapCut export) */
+.btn-success {
+  background: linear-gradient(135deg, #4caf50, #45a049);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #45a049, #3d8b40);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+/* Threshold input group */
+.threshold-input-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.threshold-input-group input[type="range"] {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #3a3a4a);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  outline: none;
+}
+
+.threshold-input-group input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #3a3a4a);
+}
+
+.threshold-input-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-color, #4a9eff);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  margin-top: -6px;
+}
+
+.threshold-input-group input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-color, #4a9eff);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.threshold-input-group input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #3a3a4a);
+}
+
+.threshold-value {
+  min-width: 50px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-color, #4a9eff);
+  text-align: right;
+}
+
+/* Scene Detail Modal - 스타일 드롭다운 위로 열기 */
+.scene-detail-modal .style-dropdown-menu {
+  bottom: 100%;
+  top: auto;
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+.scene-detail-modal.modal.ref-detail-modal {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scene-detail-modal.ref-detail-modal .modal-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 스타일 드롭다운은 body 외부로 표시될 수 있도록 */
+.scene-detail-modal .style-dropdown-wrapper {
+  position: relative;
+}
+
+/* Scene Detail Modal - 히스토리 썸네일 정사각형 */
+.scene-detail-modal .ref-detail-history .history-item {
+  width: 54px;
+  height: 54px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.scene-detail-modal .ref-detail-history .history-item:hover {
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.scene-detail-modal .ref-detail-history .history-item.selected {
+  border-color: var(--success-color);
+  box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+}
+
+.scene-detail-modal .ref-detail-history .history-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-detail-modal .ref-detail-history .history-info {
+  display: none;
+}
+
+/* Reference Detail Modal */
+.ref-detail-modal {
+  max-width: 400px;
+  overflow: hidden;
+}
+
+.ref-detail-modal.has-history {
+  max-width: 520px;
+}
+
+.ref-detail-modal .modal-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ref-detail-modal .modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* 2열 레이아웃 */
+.ref-detail-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.ref-detail-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 히스토리 열 */
+.ref-detail-history {
+  width: 70px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 1px solid var(--border-color);
+  padding-left: 16px;
+  min-height: 0;
+}
+
+.ref-detail-history .history-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.ref-detail-history .history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ref-detail-history .history-thumb {
+  width: 54px;
+  height: 54px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s;
+}
+
+.ref-detail-history .history-thumb:hover {
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.ref-detail-history .history-thumb.selected {
+  border-color: var(--success-color);
+  box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+}
+
+.ref-detail-history .history-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ref-detail-preview {
+  position: relative;
+  width: 100%;
+  min-height: 120px;
+  max-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.2);
+  border: 2px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ref-detail-preview:hover {
+  border-color: var(--primary-color);
+}
+
+.ref-detail-preview.drag-over {
+  border-color: var(--primary-color);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.ref-detail-preview.empty {
+  min-height: 150px;
+}
+
+.ref-detail-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.ref-detail-preview .preview-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.ref-detail-preview:hover .preview-overlay {
+  opacity: 1;
+}
+
+.ref-detail-preview .ref-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.ref-detail-preview .ref-placeholder .icon {
+  font-size: 2rem;
+}
+
+.ref-detail-preview .ref-uploading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.ref-detail-modal .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ref-detail-modal .form-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.ref-detail-modal .form-group input,
+.ref-detail-modal .form-group select,
+.ref-detail-modal .form-group textarea {
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.ref-detail-modal .form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.ref-detail-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.caption-section {
+  margin-top: 8px;
+}
+
+.caption-section label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 6px;
+}
+
+/* 도움말 아이콘 + 툴팁 */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: var(--border-color);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--text-secondary);
+  cursor: help;
+  position: relative;
+}
+
+.help-icon:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* 툴팁 풍선 */
+.help-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 8px 12px;
+  border-radius: var(--border-radius);
+  font-size: 0.8rem;
+  font-weight: normal;
+  white-space: normal;
+  width: 250px;
+  max-width: 300px;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  pointer-events: none;
+}
+
+/* 툴팁 화살표 */
+.help-icon::before {
+  content: '';
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: var(--border-color);
+  z-index: 10001;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.help-icon:hover::after,
+.help-icon:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+.caption-text {
+  margin: 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  min-height: 60px;
+  max-height: 200px;
+  overflow-y: auto;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.caption-text:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.status-badge.success {
+  color: var(--success-color);
+}
+
+.status-info {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Style Info Box */
+.style-info-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: var(--border-radius);
+  margin-bottom: 16px;
+}
+
+.style-info-box .style-icon {
+  font-size: 1.5rem;
+}
+
+.style-info-box span:last-child {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Style Dropdown */
+.style-dropdown-wrapper {
+  position: relative;
+}
+
+.style-dropdown-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.style-dropdown-btn:hover {
+  border-color: var(--primary-color);
+}
+
+.dropdown-arrow {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.style-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  margin-top: 4px;
+}
+
+.style-category {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.style-category:last-child {
+  border-bottom: none;
+}
+
+.style-category-header {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.style-category-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.style-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.style-option:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.style-option.selected {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--primary-color);
+}
+
+.style-option-en {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.label-hint {
+  font-weight: normal;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: 6px;
+}
+
+/* Label with copy button */
+.label-with-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-copy {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 1rem;
+  color: var(--text-color);
+  opacity: 0.6;
+  transition: opacity 0.2s, transform 0.2s;
+  margin-left: auto;
+}
+
+.btn-copy:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}

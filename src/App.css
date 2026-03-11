@@ -1,0 +1,892 @@
+/* ============================================
+   App Root (Split mode only — no tab bar)
+   ============================================ */
+
+.app-root {
+  height: 100vh;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+/* ============================================
+   Split View Layout
+   ============================================ */
+
+.shell-root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-content-split {
+  height: 100%;
+  overflow-y: auto;
+  background: #1a1a2e;
+}
+
+.app-content-split .app-root {
+  padding-top: 0;
+  height: 100%;
+}
+
+/* Resizer */
+.split-resizer {
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.split-resizer:hover,
+.split-resizer:active {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+.split-resizer-handle {
+  position: absolute;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.split-resizer:hover .split-resizer-handle,
+.split-resizer:active .split-resizer-handle {
+  background: rgba(99, 102, 241, 0.8);
+}
+
+/* 좌우 분할 시 handle */
+.shell-root.split-mode .split-resizer[style*="col-resize"] .split-resizer-handle {
+  width: 2px;
+  height: 40px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* 상하 분할 시 handle */
+.shell-root.split-mode .split-resizer[style*="row-resize"] .split-resizer-handle {
+  width: 40px;
+  height: 2px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ============================================
+   Flow2CapCut - Global & Layout Styles
+   (from Chrome extension App.css)
+   ============================================ */
+
+/* ============================================
+   CSS Variables & Reset
+   ============================================ */
+
+:root {
+  --bg-color: #1a202c;
+  --bg-secondary: #2d3748;
+  --text-color: #e2e8f0;
+  --text-secondary: #a0aec0;
+  --primary-color: #4299e1;
+  --success-color: #48bb78;
+  --warning-color: #ecc94b;
+  --error-color: #f56565;
+  --border-color: #4a5568;
+  --border-radius: 8px;
+  --font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  font-family: var(--font-family);
+  font-size: 14px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
+/* ============================================
+   Main Panel & Tabs
+   ============================================ */
+
+/* Main Panel */
+.main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow: hidden;
+  min-height: 0;
+  container-type: inline-size;
+  container-name: main-panel;
+}
+
+/* Tabs */
+.tabs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius) var(--border-radius) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.tab.active {
+  background: var(--bg-secondary);
+  color: var(--primary-color);
+  border-bottom-color: var(--bg-secondary);
+}
+
+.tabs-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-icon {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-color);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   Tab Content & Prompt Input
+   ============================================ */
+
+/* Tab Content */
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-content-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Prompt Input */
+.prompt-input-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.prompt-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  resize: none;
+  font-family: inherit;
+}
+
+.prompt-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.prompt-textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+.prompt-input-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ============================================
+   Responsive Main Panel - Container Queries
+   ============================================ */
+
+/* < 450px: config-row 줄바꿈, 버튼 텍스트 축소, 탭 축소 */
+@container main-panel (max-width: 449px) {
+  .config-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  /* 수직 나열 시 라벨 정렬: 입력창 시작점 통일 */
+  .config-item {
+    width: 100%;
+  }
+  .config-item label {
+    min-width: 3.2em;
+    text-align: right;
+  }
+  .config-item select,
+  .seed-input-group {
+    flex: 1;
+  }
+  .seed-input {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+  .action-buttons {
+    gap: 6px;
+  }
+  .btn-primary, .btn-secondary, .btn-danger, .btn-warning, .btn-success {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+  .tab {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+  .btn-icon {
+    padding: 5px 8px;
+    font-size: 0.78rem;
+  }
+  .tabs-header {
+    margin-bottom: 8px;
+  }
+}
+
+/* < 350px: 버튼 더 축소, 탭 더 축소 */
+@container main-panel (max-width: 349px) {
+  .btn-primary, .btn-secondary, .btn-danger, .btn-warning, .btn-success {
+    padding: 8px 8px;
+    font-size: 0.8rem;
+  }
+  .config-row {
+    gap: 6px;
+    padding: 8px 0;
+  }
+  .config-item label {
+    font-size: 0.75rem;
+  }
+  .config-item select {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+  }
+  .tab {
+    padding: 5px 8px;
+    font-size: 0.75rem;
+  }
+  .btn-icon {
+    padding: 4px 6px;
+    font-size: 0.72rem;
+  }
+  .tabs {
+    gap: 2px;
+  }
+  .tabs-actions {
+    gap: 4px;
+  }
+}
+
+/* ============================================
+   Config Row & Action Buttons
+   ============================================ */
+
+/* Config Row */
+.config-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-item label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.config-item select {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-size: 0.85rem;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+
+.btn-primary, .btn-secondary, .btn-danger, .btn-warning {
+  flex: 1;
+  padding: 12px 20px;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #3182ce;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary.running {
+  background: var(--warning-color);
+  color: #1a202c;
+}
+
+.btn-primary.paused {
+  background: var(--success-color);
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.btn-danger {
+  background: var(--error-color);
+  color: white;
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-warning {
+  background: var(--warning-color);
+  color: #1a202c;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d69e2e;
+}
+
+.btn-warning:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   Bottom Panel, Status Bar & Results Table
+   ============================================ */
+
+/* Bottom Panel */
+.bottom-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+/* Status Bar */
+.status-bar {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.status-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.status-progress progress {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.status-progress progress::-webkit-progress-bar {
+  background: var(--bg-color);
+  border-radius: 4px;
+}
+
+.status-progress progress::-webkit-progress-value {
+  background: var(--primary-color);
+  border-radius: 4px;
+}
+
+.progress-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+
+.status-message {
+  font-size: 0.9rem;
+}
+
+/* 레퍼런스 업로드 프로그레스 바 (보라색) */
+.status-bar.uploading .status-progress progress::-webkit-progress-value {
+  background: #a855f7;
+}
+.status-bar.uploading .status-message { color: #a855f7; }
+
+.status-bar.success .status-message { color: var(--success-color); }
+.status-bar.warning .status-message { color: var(--warning-color); }
+.status-bar.error .status-message { color: var(--error-color); }
+
+/* Results Table */
+.results-table-container {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  container-type: inline-size;
+  container-name: results-table;
+}
+
+.results-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.results-summary {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.error-count {
+  color: var(--error-color);
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.results-table th {
+  text-align: left;
+  padding: 8px;
+  background: rgba(0,0,0,0.2);
+  font-weight: 600;
+}
+
+.results-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.results-table tr.status-generating {
+  animation: gold-glow 1.5s ease-in-out infinite;
+}
+
+.results-table tr.status-done {
+  background: rgba(72, 187, 120, 0.05);
+}
+
+.results-table tr.status-error {
+  background: rgba(245, 101, 101, 0.05);
+}
+
+.prompt-preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.generating-indicator {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.status.pending { color: var(--text-secondary); }
+.status.generating { color: var(--primary-color); }
+.status.done { color: var(--success-color); }
+.status.error {
+  color: var(--error-color);
+  background: rgba(245, 101, 101, 0.2);
+  cursor: pointer;
+  border: none;
+}
+
+.retry-btn:hover {
+  background: rgba(245, 101, 101, 0.3);
+}
+
+/* ============================================
+   Responsive Results Table - Container Queries
+   ============================================ */
+
+/* < 400px: Status 컬럼 숨김 → 프롬프트 + 이미지 유지 */
+@container results-table (max-width: 399px) {
+  .results-table .col-status {
+    display: none;
+  }
+  .results-table td,
+  .results-table th {
+    padding: 4px 6px;
+  }
+}
+
+/* < 300px: 패딩 더 축소 */
+@container results-table (max-width: 299px) {
+  .results-table {
+    font-size: 0.75rem;
+  }
+  .results-table .col-id {
+    width: 24px;
+  }
+}
+
+/* ============================================
+   Modal Base Styles
+   ============================================ */
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+  position: relative;
+  z-index: 100;
+  background: var(--bg-color);
+}
+
+.ref-detail-modal .modal-footer {
+  justify-content: stretch;
+}
+
+.ref-detail-modal .modal-footer button {
+  flex: 1;
+}
+
+/* ============================================
+   Scrollbar Styles
+   ============================================ */
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* ============================================
+   Pending Saves Notice & Seed Config
+   ============================================ */
+
+/* Pending saves notice */
+.pending-saves-notice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  border-radius: 6px;
+  color: #ffb74d;
+  font-size: 13px;
+}
+
+
+/* Seed 설정 */
+.seed-config {
+  flex: 0 1 auto;
+}
+
+.seed-input-group {
+  display: flex;
+  gap: 4px;
+}
+
+.seed-input {
+  width: 90px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.seed-input::placeholder {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.seed-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.seed-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.seed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.seed-btn.locked {
+  background: rgba(76, 175, 80, 0.2);
+  border-color: #4caf50;
+}
+
+/* ============================================
+   Custom Tooltip (아래쪽 표시)
+   ============================================ */
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: #fef3c7;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 위쪽 방향 툴팁 (overflow 영역에서 사용) */
+[data-tooltip-top] {
+  position: relative;
+}
+
+[data-tooltip-top]::after {
+  content: attr(data-tooltip-top);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: pre-wrap;
+  max-width: 240px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+[data-tooltip-top]::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #fef3c7;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+[data-tooltip-top]:hover::after,
+[data-tooltip-top]:hover::before {
+  opacity: 1;
+  visibility: visible;
+}

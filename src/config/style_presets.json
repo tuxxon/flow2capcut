@@ -1,0 +1,732 @@
+{
+  "version": "1.0",
+  "total_count": 87,
+  "categories": [
+    {
+      "id": "animation",
+      "name_en": "Animation",
+      "name_ko": "애니메이션 스타일",
+      "icon": "🎌"
+    },
+    {
+      "id": "photography",
+      "name_en": "Photography",
+      "name_ko": "사실적/사진 스타일",
+      "icon": "📷"
+    },
+    {
+      "id": "film",
+      "name_en": "Film & Drama",
+      "name_ko": "영화/드라마 스타일",
+      "icon": "🎬"
+    },
+    {
+      "id": "asian-traditional",
+      "name_en": "Asian Traditional",
+      "name_ko": "한국/동양 전통",
+      "icon": "🏯"
+    },
+    {
+      "id": "western-art",
+      "name_en": "Western Art",
+      "name_ko": "서양 전통 예술",
+      "icon": "🎨"
+    },
+    {
+      "id": "illustration",
+      "name_en": "Illustration",
+      "name_ko": "일러스트/드로잉",
+      "icon": "✏️"
+    },
+    {
+      "id": "digital-art",
+      "name_en": "Digital Art",
+      "name_ko": "디지털/모던 아트",
+      "icon": "💻"
+    },
+    {
+      "id": "scifi-fantasy",
+      "name_en": "Sci-Fi & Fantasy",
+      "name_ko": "SF/판타지 장르",
+      "icon": "🚀"
+    },
+    {
+      "id": "game-3d",
+      "name_en": "Game & 3D",
+      "name_ko": "게임/3D 스타일",
+      "icon": "🎮"
+    },
+    {
+      "id": "effects",
+      "name_en": "Special Effects",
+      "name_ko": "특수 효과/기법",
+      "icon": "📸"
+    },
+    {
+      "id": "misc",
+      "name_en": "Miscellaneous",
+      "name_ko": "기타/특수 스타일",
+      "icon": "🎭"
+    }
+  ],
+  "styles": [
+    {
+      "id": "korean-ani",
+      "name_ko": "한국 애니",
+      "name_en": "Korean Anime",
+      "category": "animation",
+      "prompt_en": "Korean anime style, vibrant colors, detailed characters"
+    },
+    {
+      "id": "ghibli",
+      "name_ko": "지브리",
+      "name_en": "Studio Ghibli",
+      "category": "animation",
+      "prompt_en": "Studio Ghibli style, soft watercolor, whimsical, hand-drawn feel"
+    },
+    {
+      "id": "disney-pixar",
+      "name_ko": "디즈니/픽사",
+      "name_en": "Disney/Pixar",
+      "category": "animation",
+      "prompt_en": "Disney Pixar 3D animation style, expressive, family-friendly"
+    },
+    {
+      "id": "cartoon-3d",
+      "name_ko": "Cartoon 3D",
+      "name_en": "Cartoon 3D",
+      "category": "animation",
+      "prompt_en": "3D cartoon style, Pixar Disney animation, soft lighting, vibrant colors, expressive characters, rounded shapes"
+    },
+    {
+      "id": "korean-romance-webtoon",
+      "name_ko": "한국 로맨스 웹툰",
+      "name_en": "Korean Romance Webtoon",
+      "category": "animation",
+      "prompt_en": "Korean romance webtoon style, soft pastel colors, delicate facial features, sparkling eyes, romantic atmosphere, manhwa illustration, clean linework, emotional expression"
+    },
+    {
+      "id": "semi-animation",
+      "name_ko": "세미 애니메이션",
+      "name_en": "Semi-Animation",
+      "category": "animation",
+      "prompt_en": "Semi-animation style, modern Korean illustration, clean lines, soft shading, YouTube thumbnail style, informational illustration, casual realistic anime hybrid"
+    },
+    {
+      "id": "stick-figure",
+      "name_ko": "스틱맨",
+      "name_en": "Stick Figure",
+      "category": "animation",
+      "prompt_en": "Stick figure style, simple line drawing, minimal black lines on white background, circle head with stick body, extremely simple and clean, meme style illustration"
+    },
+    {
+      "id": "90s-anime",
+      "name_ko": "90년대 애니",
+      "name_en": "90s Anime",
+      "category": "animation",
+      "prompt_en": "90s retro anime style, cel shading, nostalgic, VHS aesthetic"
+    },
+    {
+      "id": "manhwa",
+      "name_ko": "만화/웹툰",
+      "name_en": "Manhwa/Webtoon",
+      "category": "animation",
+      "prompt_en": "Korean manhwa/webtoon style, bold lines, dramatic"
+    },
+    {
+      "id": "chibi",
+      "name_ko": "치비",
+      "name_en": "Chibi",
+      "category": "animation",
+      "prompt_en": "Chibi style, cute, big head, small body, kawaii"
+    },
+    {
+      "id": "makoto-shinkai",
+      "name_ko": "신카이 마코토",
+      "name_en": "Makoto Shinkai",
+      "category": "animation",
+      "prompt_en": "Makoto Shinkai style, beautiful skies, lens flare, emotional scenery"
+    },
+    {
+      "id": "claymation",
+      "name_ko": "클레이메이션",
+      "name_en": "Claymation",
+      "category": "animation",
+      "prompt_en": "Claymation stop-motion style, clay figures, handmade feel"
+    },
+    {
+      "id": "photorealistic",
+      "name_ko": "실사",
+      "name_en": "Photorealistic",
+      "category": "photography",
+      "prompt_en": "Photorealistic, cinematic, high detail photography"
+    },
+    {
+      "id": "semi-realistic",
+      "name_ko": "반실사",
+      "name_en": "Semi-Realistic",
+      "category": "photography",
+      "prompt_en": "Semi-realistic, stylized realism, digital art"
+    },
+    {
+      "id": "portrait",
+      "name_ko": "인물 사진",
+      "name_en": "Portrait",
+      "category": "photography",
+      "prompt_en": "Professional portrait photography, studio lighting, bokeh"
+    },
+    {
+      "id": "cinematic",
+      "name_ko": "시네마틱",
+      "name_en": "Cinematic",
+      "category": "photography",
+      "prompt_en": "Cinematic film still, dramatic lighting, movie scene, anamorphic"
+    },
+    {
+      "id": "documentary",
+      "name_ko": "다큐멘터리",
+      "name_en": "Documentary",
+      "category": "photography",
+      "prompt_en": "Documentary photography style, natural lighting, authentic feel"
+    },
+    {
+      "id": "fashion",
+      "name_ko": "패션 화보",
+      "name_en": "Fashion",
+      "category": "photography",
+      "prompt_en": "High fashion photography, editorial style, glamorous lighting"
+    },
+    {
+      "id": "street-photo",
+      "name_ko": "스트릿 포토",
+      "name_en": "Street Photography",
+      "category": "photography",
+      "prompt_en": "Street photography, candid, urban, authentic moments"
+    },
+    {
+      "id": "drone-aerial",
+      "name_ko": "드론/항공",
+      "name_en": "Drone/Aerial",
+      "category": "photography",
+      "prompt_en": "Drone aerial photography, birds eye view, landscape"
+    },
+    {
+      "id": "kdrama",
+      "name_ko": "K-드라마",
+      "name_en": "K-Drama",
+      "category": "film",
+      "prompt_en": "Korean drama style, romantic lighting, soft focus, emotional"
+    },
+    {
+      "id": "sageuk",
+      "name_ko": "사극",
+      "name_en": "Sageuk",
+      "category": "film",
+      "prompt_en": "Korean historical drama (sageuk) style, Joseon era, traditional costumes, palace settings"
+    },
+    {
+      "id": "noir",
+      "name_ko": "느와르",
+      "name_en": "Film Noir",
+      "category": "film",
+      "prompt_en": "Film noir style, high contrast black and white, dramatic shadows"
+    },
+    {
+      "id": "thriller",
+      "name_ko": "스릴러",
+      "name_en": "Thriller",
+      "category": "film",
+      "prompt_en": "Thriller movie style, suspenseful atmosphere, dark tones"
+    },
+    {
+      "id": "horror",
+      "name_ko": "호러/공포",
+      "name_en": "Horror",
+      "category": "film",
+      "prompt_en": "Horror style, creepy atmosphere, unsettling, dark shadows"
+    },
+    {
+      "id": "melodrama",
+      "name_ko": "멜로드라마",
+      "name_en": "Melodrama",
+      "category": "film",
+      "prompt_en": "Melodrama style, emotional, warm tones, romantic atmosphere"
+    },
+    {
+      "id": "blockbuster",
+      "name_ko": "블록버스터",
+      "name_en": "Blockbuster",
+      "category": "film",
+      "prompt_en": "Hollywood blockbuster style, epic scale, dramatic action"
+    },
+    {
+      "id": "indie-film",
+      "name_ko": "인디 영화",
+      "name_en": "Indie Film",
+      "category": "film",
+      "prompt_en": "Indie film aesthetic, natural lighting, intimate, artistic"
+    },
+    {
+      "id": "minhwa",
+      "name_ko": "민화",
+      "name_en": "Minhwa",
+      "category": "asian-traditional",
+      "prompt_en": "Korean folk painting (minhwa), traditional colors, symbolic imagery"
+    },
+    {
+      "id": "ink-wash",
+      "name_ko": "수묵화",
+      "name_en": "Ink Wash",
+      "category": "asian-traditional",
+      "prompt_en": "East Asian ink wash painting, sumi-e, traditional brush strokes"
+    },
+    {
+      "id": "dancheong",
+      "name_ko": "단청",
+      "name_en": "Dancheong",
+      "category": "asian-traditional",
+      "prompt_en": "Korean traditional dancheong patterns, temple art, vibrant traditional colors"
+    },
+    {
+      "id": "ukiyo-e",
+      "name_ko": "우키요에",
+      "name_en": "Ukiyo-e",
+      "category": "asian-traditional",
+      "prompt_en": "Japanese ukiyo-e woodblock print style, traditional"
+    },
+    {
+      "id": "chinese-painting",
+      "name_ko": "중국화",
+      "name_en": "Chinese Painting",
+      "category": "asian-traditional",
+      "prompt_en": "Traditional Chinese painting, landscape, misty mountains, calligraphic"
+    },
+    {
+      "id": "hanbok-portrait",
+      "name_ko": "한복 초상",
+      "name_en": "Hanbok Portrait",
+      "category": "asian-traditional",
+      "prompt_en": "Traditional Korean hanbok portrait style, elegant, historical"
+    },
+    {
+      "id": "watercolor",
+      "name_ko": "수채화",
+      "name_en": "Watercolor",
+      "category": "western-art",
+      "prompt_en": "Watercolor painting style, soft edges, artistic"
+    },
+    {
+      "id": "oil-painting",
+      "name_ko": "유화",
+      "name_en": "Oil Painting",
+      "category": "western-art",
+      "prompt_en": "Oil painting style, rich textures, classical art"
+    },
+    {
+      "id": "impressionist",
+      "name_ko": "인상파",
+      "name_en": "Impressionist",
+      "category": "western-art",
+      "prompt_en": "Impressionist painting, visible brushstrokes, light and color, Monet style"
+    },
+    {
+      "id": "renaissance",
+      "name_ko": "르네상스",
+      "name_en": "Renaissance",
+      "category": "western-art",
+      "prompt_en": "Renaissance art style, classical composition, religious themes, da Vinci"
+    },
+    {
+      "id": "baroque",
+      "name_ko": "바로크",
+      "name_en": "Baroque",
+      "category": "western-art",
+      "prompt_en": "Baroque style, dramatic lighting, rich colors, Rembrandt, Caravaggio"
+    },
+    {
+      "id": "expressionist",
+      "name_ko": "표현주의",
+      "name_en": "Expressionist",
+      "category": "western-art",
+      "prompt_en": "Expressionist style, emotional, distorted forms, bold colors"
+    },
+    {
+      "id": "surrealist",
+      "name_ko": "초현실주의",
+      "name_en": "Surrealist",
+      "category": "western-art",
+      "prompt_en": "Surrealist style, dreamlike, impossible scenes, Dali, Magritte"
+    },
+    {
+      "id": "art-nouveau",
+      "name_ko": "아르누보",
+      "name_en": "Art Nouveau",
+      "category": "western-art",
+      "prompt_en": "Art Nouveau style, organic curves, decorative, Mucha"
+    },
+    {
+      "id": "art-deco",
+      "name_ko": "아르데코",
+      "name_en": "Art Deco",
+      "category": "western-art",
+      "prompt_en": "Art Deco style, geometric, glamorous, 1920s aesthetic"
+    },
+    {
+      "id": "romanticism",
+      "name_ko": "낭만주의",
+      "name_en": "Romanticism",
+      "category": "western-art",
+      "prompt_en": "Romanticism style, dramatic landscapes, emotion, sublime nature"
+    },
+    {
+      "id": "sketch",
+      "name_ko": "연필 스케치",
+      "name_en": "Pencil Sketch",
+      "category": "illustration",
+      "prompt_en": "Pencil sketch, hand-drawn, graphite, detailed linework"
+    },
+    {
+      "id": "charcoal",
+      "name_ko": "목탄화",
+      "name_en": "Charcoal",
+      "category": "illustration",
+      "prompt_en": "Charcoal drawing, dramatic shadows, textured, expressive"
+    },
+    {
+      "id": "pen-ink",
+      "name_ko": "펜화",
+      "name_en": "Pen & Ink",
+      "category": "illustration",
+      "prompt_en": "Pen and ink illustration, detailed linework, crosshatching"
+    },
+    {
+      "id": "colored-pencil",
+      "name_ko": "색연필",
+      "name_en": "Colored Pencil",
+      "category": "illustration",
+      "prompt_en": "Colored pencil illustration, soft blending, textured"
+    },
+    {
+      "id": "children-book",
+      "name_ko": "동화책",
+      "name_en": "Children's Book",
+      "category": "illustration",
+      "prompt_en": "Children book illustration, cute, colorful, friendly"
+    },
+    {
+      "id": "editorial",
+      "name_ko": "에디토리얼",
+      "name_en": "Editorial",
+      "category": "illustration",
+      "prompt_en": "Editorial illustration, conceptual, magazine style"
+    },
+    {
+      "id": "botanical",
+      "name_ko": "보태니컬",
+      "name_en": "Botanical",
+      "category": "illustration",
+      "prompt_en": "Botanical illustration, detailed plants and flowers, scientific art"
+    },
+    {
+      "id": "fashion-sketch",
+      "name_ko": "패션 스케치",
+      "name_en": "Fashion Sketch",
+      "category": "illustration",
+      "prompt_en": "Fashion design sketch, elongated figures, stylized"
+    },
+    {
+      "id": "concept-art",
+      "name_ko": "컨셉 아트",
+      "name_en": "Concept Art",
+      "category": "digital-art",
+      "prompt_en": "Professional concept art, detailed, game/movie production quality"
+    },
+    {
+      "id": "digital-art",
+      "name_ko": "디지털 아트",
+      "name_en": "Digital Art",
+      "category": "digital-art",
+      "prompt_en": "Modern digital illustration, clean, professional"
+    },
+    {
+      "id": "fantasy-art",
+      "name_ko": "판타지 아트",
+      "name_en": "Fantasy Art",
+      "category": "digital-art",
+      "prompt_en": "Epic fantasy art, magical, detailed environments"
+    },
+    {
+      "id": "dark-fantasy",
+      "name_ko": "다크 판타지",
+      "name_en": "Dark Fantasy",
+      "category": "digital-art",
+      "prompt_en": "Dark fantasy, gothic, moody atmosphere, dramatic"
+    },
+    {
+      "id": "graphic-novel",
+      "name_ko": "그래픽 노블",
+      "name_en": "Graphic Novel",
+      "category": "digital-art",
+      "prompt_en": "Graphic novel style, comic book art, dramatic panels"
+    },
+    {
+      "id": "vector-art",
+      "name_ko": "벡터 아트",
+      "name_en": "Vector Art",
+      "category": "digital-art",
+      "prompt_en": "Vector illustration, clean lines, flat colors, modern"
+    },
+    {
+      "id": "vaporwave",
+      "name_ko": "베이퍼웨이브",
+      "name_en": "Vaporwave",
+      "category": "digital-art",
+      "prompt_en": "Vaporwave aesthetic, 80s/90s nostalgia, neon pink and blue, glitch"
+    },
+    {
+      "id": "synthwave",
+      "name_ko": "신스웨이브",
+      "name_en": "Synthwave",
+      "category": "digital-art",
+      "prompt_en": "Synthwave style, retro futurism, neon grid, sunset"
+    },
+    {
+      "id": "cyberpunk",
+      "name_ko": "사이버펑크",
+      "name_en": "Cyberpunk",
+      "category": "scifi-fantasy",
+      "prompt_en": "Cyberpunk style, neon lights, futuristic, dystopian"
+    },
+    {
+      "id": "steampunk",
+      "name_ko": "스팀펑크",
+      "name_en": "Steampunk",
+      "category": "scifi-fantasy",
+      "prompt_en": "Steampunk style, Victorian era, brass and copper, mechanical"
+    },
+    {
+      "id": "sci-fi",
+      "name_ko": "SF/공상과학",
+      "name_en": "Sci-Fi",
+      "category": "scifi-fantasy",
+      "prompt_en": "Science fiction style, futuristic technology, space, advanced civilization"
+    },
+    {
+      "id": "post-apocalyptic",
+      "name_ko": "포스트아포칼립스",
+      "name_en": "Post-Apocalyptic",
+      "category": "scifi-fantasy",
+      "prompt_en": "Post-apocalyptic style, ruins, survival, desolate"
+    },
+    {
+      "id": "space-opera",
+      "name_ko": "스페이스 오페라",
+      "name_en": "Space Opera",
+      "category": "scifi-fantasy",
+      "prompt_en": "Space opera style, epic space battles, alien worlds, grand scale"
+    },
+    {
+      "id": "mythological",
+      "name_ko": "신화/전설",
+      "name_en": "Mythological",
+      "category": "scifi-fantasy",
+      "prompt_en": "Mythological style, gods, legends, epic fantasy"
+    },
+    {
+      "id": "3d-render",
+      "name_ko": "3D 렌더",
+      "name_en": "3D Render",
+      "category": "game-3d",
+      "prompt_en": "3D rendered, CGI, realistic lighting, octane render"
+    },
+    {
+      "id": "low-poly",
+      "name_ko": "로우폴리",
+      "name_en": "Low Poly",
+      "category": "game-3d",
+      "prompt_en": "Low poly 3D style, geometric, modern game aesthetic"
+    },
+    {
+      "id": "pixel-art",
+      "name_ko": "픽셀 아트",
+      "name_en": "Pixel Art",
+      "category": "game-3d",
+      "prompt_en": "Pixel art style, retro game aesthetics, 8-bit, 16-bit"
+    },
+    {
+      "id": "isometric",
+      "name_ko": "아이소메트릭",
+      "name_en": "Isometric",
+      "category": "game-3d",
+      "prompt_en": "Isometric view, game art style, detailed scenes"
+    },
+    {
+      "id": "unreal-engine",
+      "name_ko": "언리얼 엔진",
+      "name_en": "Unreal Engine",
+      "category": "game-3d",
+      "prompt_en": "Unreal Engine 5 quality, hyperrealistic, RTX, photogrammetry"
+    },
+    {
+      "id": "nintendo",
+      "name_ko": "닌텐도 스타일",
+      "name_en": "Nintendo Style",
+      "category": "game-3d",
+      "prompt_en": "Nintendo game style, colorful, playful, Mario/Zelda aesthetic"
+    },
+    {
+      "id": "vintage",
+      "name_ko": "빈티지/레트로",
+      "name_en": "Vintage/Retro",
+      "category": "effects",
+      "prompt_en": "Vintage retro style, aged look, nostalgic, film grain"
+    },
+    {
+      "id": "sepia",
+      "name_ko": "세피아",
+      "name_en": "Sepia",
+      "category": "effects",
+      "prompt_en": "Sepia tone, old photograph, nostalgic, antique feel"
+    },
+    {
+      "id": "monochrome",
+      "name_ko": "모노크롬",
+      "name_en": "Monochrome",
+      "category": "effects",
+      "prompt_en": "Monochrome black and white, artistic, high contrast"
+    },
+    {
+      "id": "double-exposure",
+      "name_ko": "이중노출",
+      "name_en": "Double Exposure",
+      "category": "effects",
+      "prompt_en": "Double exposure effect, overlapping images, artistic blend"
+    },
+    {
+      "id": "long-exposure",
+      "name_ko": "장노출",
+      "name_en": "Long Exposure",
+      "category": "effects",
+      "prompt_en": "Long exposure photography, light trails, motion blur, silky water"
+    },
+    {
+      "id": "tilt-shift",
+      "name_ko": "틸트시프트",
+      "name_en": "Tilt-Shift",
+      "category": "effects",
+      "prompt_en": "Tilt-shift miniature effect, selective focus, toy-like"
+    },
+    {
+      "id": "hdr",
+      "name_ko": "HDR",
+      "name_en": "HDR",
+      "category": "effects",
+      "prompt_en": "HDR photography, high dynamic range, vivid colors, detailed shadows"
+    },
+    {
+      "id": "infrared",
+      "name_ko": "적외선",
+      "name_en": "Infrared",
+      "category": "effects",
+      "prompt_en": "Infrared photography style, surreal colors, white foliage"
+    },
+    {
+      "id": "glitch",
+      "name_ko": "글리치",
+      "name_en": "Glitch",
+      "category": "effects",
+      "prompt_en": "Glitch art, digital distortion, RGB split, corrupted data aesthetic"
+    },
+    {
+      "id": "silhouette",
+      "name_ko": "실루엣",
+      "name_en": "Silhouette",
+      "category": "effects",
+      "prompt_en": "Silhouette style, backlit, dramatic outlines, shadow figures"
+    },
+    {
+      "id": "pop-art",
+      "name_ko": "팝아트",
+      "name_en": "Pop Art",
+      "category": "misc",
+      "prompt_en": "Pop art style, bold colors, Ben-Day dots, Warhol, Lichtenstein"
+    },
+    {
+      "id": "minimalist",
+      "name_ko": "미니멀",
+      "name_en": "Minimalist",
+      "category": "misc",
+      "prompt_en": "Minimalist style, simple shapes, clean lines, limited colors"
+    },
+    {
+      "id": "abstract",
+      "name_ko": "추상화",
+      "name_en": "Abstract",
+      "category": "misc",
+      "prompt_en": "Abstract art, non-representational, shapes and colors"
+    },
+    {
+      "id": "collage",
+      "name_ko": "콜라주",
+      "name_en": "Collage",
+      "category": "misc",
+      "prompt_en": "Collage art style, mixed media, cut paper, layered images"
+    },
+    {
+      "id": "stained-glass",
+      "name_ko": "스테인드글라스",
+      "name_en": "Stained Glass",
+      "category": "misc",
+      "prompt_en": "Stained glass window style, colorful glass segments, leadlines"
+    },
+    {
+      "id": "mosaic",
+      "name_ko": "모자이크",
+      "name_en": "Mosaic",
+      "category": "misc",
+      "prompt_en": "Mosaic art style, small tiles, Byzantine, decorative"
+    },
+    {
+      "id": "graffiti",
+      "name_ko": "그래피티",
+      "name_en": "Graffiti",
+      "category": "misc",
+      "prompt_en": "Street art graffiti style, spray paint, urban, bold"
+    },
+    {
+      "id": "propaganda",
+      "name_ko": "프로파간다",
+      "name_en": "Propaganda",
+      "category": "misc",
+      "prompt_en": "Propaganda poster style, bold graphics, political art, Soviet/WPA"
+    },
+    {
+      "id": "pastel",
+      "name_ko": "파스텔",
+      "name_en": "Pastel",
+      "category": "misc",
+      "prompt_en": "Soft pastel style, gentle colors, dreamy, light"
+    },
+    {
+      "id": "neon",
+      "name_ko": "네온",
+      "name_en": "Neon",
+      "category": "misc",
+      "prompt_en": "Neon glow style, bright glowing lights, dark background"
+    },
+    {
+      "id": "paper-cut",
+      "name_ko": "페이퍼컷",
+      "name_en": "Paper Cut",
+      "category": "misc",
+      "prompt_en": "Paper cut art style, layered paper, shadows, dimensional"
+    },
+    {
+      "id": "origami",
+      "name_ko": "종이접기",
+      "name_en": "Origami",
+      "category": "misc",
+      "prompt_en": "Origami style, folded paper aesthetic, geometric, clean"
+    }
+  ]
+}

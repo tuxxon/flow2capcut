@@ -1,0 +1,380 @@
+/**
+ * ReferenceDetailModal - 레퍼런스 상세 모달
+ */
+
+import { useState, useEffect } from 'react'
+import { REFERENCE_TYPES, STYLE_PRESETS, RESOURCE } from '../config/defaults'
+import { useImageUpload } from '../hooks/useImageUpload'
+import { fileSystemAPI } from '../hooks/useFileSystem'
+import { toast } from './Toast'
+import Modal from './Modal'
+
+export default function ReferenceDetailModal({ reference, index, onUpdate, onUpload, onClose, onGenerate, isGenerating, t, projectName }) {
+  const [editData, setEditData] = useState({ ...reference })
+  const [showStyleDropdown, setShowStyleDropdown] = useState(false)
+  const [histories, setHistories] = useState([])
+  const [shouldReloadHistory, setShouldReloadHistory] = useState(0)
+  const [imageSize, setImageSize] = useState(null)
+  
+  // reference prop이 변경되면 editData 업데이트 (재생성 완료 시)
+  useEffect(() => {
+    setEditData(prev => ({
+      ...prev,
+      data: reference.data,
+      mediaId: reference.mediaId,
+      caption: reference.caption
+    }))
+    // 히스토리 재로드 트리거
+    setShouldReloadHistory(n => n + 1)
+  }, [reference.data, reference.mediaId])
+  
+  const imageUpload = useImageUpload({
+    uploadToFlow: onUpload,
+    category: editData.category,
+    onUploadComplete: (result) => {
+      setEditData(prev => ({
+        ...prev,
+        data: result.data,
+        mediaId: result.mediaId || prev.mediaId,
+        caption: result.caption || prev.caption
+      }))
+    }
+  })
+  
+  const loadHistory = async () => {
+    const result = await fileSystemAPI.getHistory(projectName, RESOURCE.REFERENCES, reference.name)
+    if (result.success && result.histories?.length > 0) {
+      const historiesWithData = await Promise.all(
+        result.histories.map(async (hist) => {
+          const fileResult = await fileSystemAPI.readHistoryFile(projectName, RESOURCE.REFERENCES, hist.filename)
+          return {
+            ...hist,
+            data: fileResult.success ? fileResult.data : null,
+            metadata: fileResult.metadata || null  // caption, mediaId 등
+          }
+        })
+      )
+      setHistories(historiesWithData.filter(h => h.data))
+    }
+  }
+  
+  // 히스토리 로드
+  useEffect(() => {
+    if (projectName && reference.name) {
+      loadHistory()
+    }
+  }, [projectName, reference.name, shouldReloadHistory])
+  
+  // 히스토리 이미지 선택
+  const handleRestoreHistory = (historyItem) => {
+    setEditData(prev => ({
+      ...prev,
+      data: historyItem.data,
+      mediaId: historyItem.metadata?.mediaId || null,
+      caption: historyItem.metadata?.caption || null,
+      filePath: null,  // 저장 시 새로 저장되도록
+      dataStorage: null
+    }))
+  }
+  
+  const handleSave = async () => {
+    // 이미지가 있고 파일로 저장 안 된 경우 (업로드된 이미지) 파일 저장
+    if (editData.data && !editData.filePath && projectName) {
+      try {
+        const permission = await fileSystemAPI.checkPermission()
+        if (permission.hasPermission && editData.name) {
+          const metadata = { 
+            mediaId: editData.mediaId, 
+            caption: editData.caption, 
+            category: editData.category 
+          }
+          const saveResult = await fileSystemAPI.saveReference(
+            projectName, 
+            editData.name, 
+            editData.data, 
+            'imported', 
+            metadata
+          )
+          if (saveResult.success) {
+            editData.filePath = saveResult.path
+            editData.dataStorage = 'file'
+            console.log('[ReferenceDetail] Saved uploaded image:', saveResult.path)
+          }
+        }
+      } catch (err) {
+        console.error('[ReferenceDetail] Save error:', err)
+      }
+    }
+    
+    onUpdate(index, editData)
+    onClose()
+  }
+  
+  // 스타일 선택 핸들러
+  const handleStyleSelect = (style) => {
+    setEditData(prev => ({
+      ...prev,
+      name: style.name_ko,
+      prompt: style.prompt_en,
+      description: style.name_en
+    }))
+    setShowStyleDropdown(false)
+  }
+  
+  const typeInfo = REFERENCE_TYPES.find(t => t.value === editData.type) || REFERENCE_TYPES[0]
+  const isStyle = editData.type === 'style'
+
+  // 클립보드에 복사
+  const handleCopy = async (text, fieldName) => {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(`${fieldName} ${t('common.copied')}`)
+    } catch (err) {
+      console.error('Copy failed:', err)
+      toast.error(t('common.copyFailed'))
+    }
+  }
+  
+  // 재생성 핸들러
+  const handleRegenerate = () => {
+    console.log('[ReferenceDetail] Regenerate clicked', { index, editData, onGenerate: !!onGenerate })
+    try {
+      // 먼저 현재 편집 내용 저장
+      onUpdate(index, editData)
+      // 재생성 시작
+      if (onGenerate) {
+        onGenerate(index)
+      } else {
+        console.error('[ReferenceDetail] onGenerate is not defined!')
+      }
+    } catch (err) {
+      console.error('[ReferenceDetail] Regenerate error:', err)
+    }
+  }
+  
+  const footer = (
+    <>
+      <button className="btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
+      {!isStyle && onGenerate && (
+        <button 
+          className="btn-warning" 
+          onClick={handleRegenerate}
+          disabled={isGenerating}
+        >
+          {isGenerating ? '⏳ ' + t('reference.generating') : '🔄 ' + t('reference.regenerate')}
+        </button>
+      )}
+      <button className="btn-primary" onClick={handleSave}>{t('common.save')}</button>
+    </>
+  )
+  
+  return (
+    <Modal
+      onClose={onClose}
+      title={`${typeInfo.label} ${t('reference.detail')}`}
+      className={`ref-detail-modal ${histories.length > 0 ? 'has-history' : ''}`}
+      footer={footer}
+    >
+      <div className="ref-detail-layout">
+        {/* 왼쪽: 기존 내용 */}
+        <div className="ref-detail-main">
+          {/* 스타일 타입일 때 안내 메시지 */}
+          {isStyle && (
+            <div className="style-info-box">
+              <span className="style-icon">🎨</span>
+              <span>{t('reference.styleTextOnly')}</span>
+            </div>
+          )}
+          
+          {/* 이미지 영역 - 스타일이 아니거나, 스타일이면서 이미지 있을 때 */}
+          {(!isStyle || editData.data) && (
+            <>
+              <input {...imageUpload.getInputProps()} />
+              
+              <div 
+                className={`ref-detail-preview ${imageUpload.isDragOver ? 'drag-over' : ''} ${!editData.data ? 'empty' : ''}`}
+                {...(isGenerating ? {} : imageUpload.getDropZoneProps())}
+              >
+                {(imageUpload.isUploading || isGenerating) ? (
+                  <div className="ref-uploading">
+                    <span className="spinner">⏳</span>
+                    <span>{isGenerating ? t('reference.generating') : t('reference.uploading')}</span>
+                  </div>
+                ) : editData.data ? (
+                  <>
+                    <img
+                      src={editData.data}
+                      alt={editData.name || 'Reference'}
+                      onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
+                    />
+                    <div className="preview-overlay">
+                      <span>📷 {t('reference.clickToChange')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="ref-placeholder">
+                    <span className="icon">{typeInfo.label.split(' ')[0]}</span>
+                    <span>{t('reference.upload')}</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          
+          {/* 이름 - 스타일 타입일 때 드롭다운 */}
+          <div className="form-group">
+            <label className="label-with-copy">
+              {t('reference.name')}
+              {editData.name && (
+                <button
+                  type="button"
+                  className="btn-copy"
+                  onClick={() => handleCopy(editData.name, t('reference.name'))}
+                  title={t('common.copy')}
+                >⧉</button>
+              )}
+            </label>
+            {isStyle ? (
+              <div className="style-dropdown-wrapper">
+                <button
+                  type="button"
+                  className="style-dropdown-btn"
+                  onClick={() => setShowStyleDropdown(!showStyleDropdown)}
+                >
+                  <span>{editData.name || t('reference.selectStyle')}</span>
+                  <span className="dropdown-arrow">{showStyleDropdown ? '▲' : '▼'}</span>
+                </button>
+
+                {showStyleDropdown && (
+                  <div className="style-dropdown-menu">
+                    {STYLE_PRESETS.categories.map(cat => (
+                      <div key={cat.id} className="style-category">
+                        <div className="style-category-header">
+                          {cat.icon} {cat.name_ko}
+                        </div>
+                        <div className="style-category-items">
+                          {STYLE_PRESETS.styles
+                            .filter(s => s.category === cat.id)
+                            .map(style => (
+                              <div
+                                key={style.id}
+                                className={`style-option ${editData.name === style.name_ko ? 'selected' : ''}`}
+                                onClick={() => handleStyleSelect(style)}
+                              >
+                                {style.name_ko}
+                                <span className="style-option-en">{style.name_en}</span>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={editData.name || ''}
+                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                placeholder={t('reference.namePlaceholder')}
+              />
+            )}
+          </div>
+          
+          {/* 타입 */}
+          <div className="form-group">
+            <label>{t('reference.type')}</label>
+            <select 
+              value={editData.type}
+              onChange={(e) => {
+                const typeInfo = REFERENCE_TYPES.find(t => t.value === e.target.value)
+                setEditData({ 
+                  ...editData, 
+                  type: e.target.value,
+                  category: typeInfo?.category || 'MEDIA_CATEGORY_SUBJECT'
+                })
+              }}
+            >
+              {REFERENCE_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* 프롬프트 */}
+          <div className="form-group">
+            <label className="label-with-copy">
+              {t('reference.prompt')}
+              {isStyle && <span className="label-hint">({t('reference.autoFilled')})</span>}
+              {editData.prompt && (
+                <button
+                  type="button"
+                  className="btn-copy"
+                  onClick={() => handleCopy(editData.prompt, t('reference.prompt'))}
+                  title={t('common.copy')}
+                >⧉</button>
+              )}
+            </label>
+            <textarea
+              value={editData.prompt || ''}
+              onChange={(e) => setEditData({ ...editData, prompt: e.target.value })}
+              placeholder={t('reference.promptPlaceholder')}
+              rows={4}
+            />
+          </div>
+          
+          {/* 상태 정보 */}
+          <div className="ref-detail-status">
+            {(editData.mediaId || imageSize) && (
+              <span className="status-badge success">
+                {editData.mediaId && `✅ ${t('reference.uploadedToFlow')}`}
+                {editData.mediaId && imageSize && ' · '}
+                {imageSize && `${imageSize.width} × ${imageSize.height}`}
+              </span>
+            )}
+            {editData.caption && (
+              <div className="caption-section">
+                <label className="label-with-copy">
+                  💬 {t('reference.caption')}
+                  <span className="help-icon" data-tooltip={t('reference.captionHelp')}>?</span>
+                  <button
+                    type="button"
+                    className="btn-copy"
+                    onClick={() => handleCopy(editData.caption, t('reference.caption'))}
+                    title={t('common.copy')}
+                  >⧉</button>
+                </label>
+                <textarea
+                  className="caption-text"
+                  value={editData.caption}
+                  readOnly
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* 오른쪽: 히스토리 */}
+        {histories.length > 0 && (
+          <div className="ref-detail-history">
+            <div className="history-header">📜 {t('reference.history')}</div>
+            <div className="history-list">
+              {histories.map((hist, idx) => (
+                <div 
+                  key={hist.filename}
+                  className={`history-thumb ${editData.data === hist.data ? 'selected' : ''}`}
+                  onClick={() => handleRestoreHistory(hist)}
+                  title={`${new Date(hist.lastModified).toLocaleString()} - ${t('common.clickToRestore')}`}
+                >
+                  <img src={hist.data} alt={`History ${idx + 1}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
