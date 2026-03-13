@@ -30,7 +30,7 @@ import SettingsModal from './components/SettingsModal'
 import ImportModal from './components/ImportModal'
 import StatusBar from './components/StatusBar'
 import ResultsTable from './components/ResultsTable'
-import SelectablePromptList from './components/SelectablePromptList'
+// SelectablePromptList 제거됨 — 체크박스 기능이 ResultsTable에 통합
 import SceneDetailModal from './components/SceneDetailModal'
 import VideoDetailModal from './components/VideoDetailModal'
 import ResizeHandle from './components/ResizeHandle'
@@ -93,6 +93,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('text') // 'text' | 'video-text' | 'frame-to-video' | 'list'
   const [framePairs, setFramePairs] = useState([])   // Frame to Video 매핑
   const [ftvPromptSource, setFtvPromptSource] = useState('image') // 'image' | 'video' | 'none'
+  const [galleryItems, setGalleryItems] = useState([])
+  const [galleryLoading, setGalleryLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState(null) // 설정 모달 초기 탭
   const [showImport, setShowImport] = useState(false)
@@ -168,6 +170,65 @@ function App() {
       setShowPaywallModal(true)
     }
   })
+
+  // ── 완성된 비디오 → 씬에 자동 동기화 (세션 내 기존 비디오 반영) ──
+  useEffect(() => {
+    if (!scenes?.length) return
+    let synced = false
+
+    // T2V: vscene_N → scene_N
+    if (videoScenes?.length) {
+      for (const vs of videoScenes) {
+        if ((vs.status === 'complete' || vs.status === 'done') && vs.video) {
+          const sceneId = vs.id.replace('vscene_', 'scene_')
+          const scene = scenes.find(s => s.id === sceneId)
+          if (scene && !scene.videoT2V) {
+            scenesHook.updateScene(sceneId, {
+              videoT2V: vs.video,
+              videoT2VPath: vs.videoPath || null,
+            })
+            synced = true
+          }
+        }
+      }
+    }
+
+    // I2V: framePair.startSceneId → scene
+    if (framePairs?.length) {
+      for (const fp of framePairs) {
+        if ((fp.status === 'complete' || fp.status === 'done') && fp.base64 && fp.startSceneId && !fp.startSceneId.startsWith('gallery::')) {
+          const scene = scenes.find(s => s.id === fp.startSceneId)
+          if (scene && !scene.videoI2V) {
+            scenesHook.updateScene(fp.startSceneId, {
+              videoI2V: fp.base64,
+              videoI2VPath: fp.videoPath || null,
+            })
+            synced = true
+          }
+        }
+      }
+    }
+
+    if (synced) console.log('[App] Synced existing videos → scenes')
+  }, [videoScenes, framePairs])
+
+  // Gallery 로드
+  const loadGallery = async () => {
+    if (galleryLoading) return
+    setGalleryLoading(true)
+    try {
+      const result = await flowAPI.fetchGallery()
+      if (result.success) {
+        setGalleryItems(result.items || [])
+      } else {
+        console.warn('[Gallery] Load failed:', result.error)
+      }
+    } catch (e) {
+      console.error('[Gallery] Error:', e)
+    } finally {
+      setGalleryLoading(false)
+    }
+  }
 
   // Auto-save project data when scenes/references/videoScenes/framePairs change (생성 중 또는 복원 중 아닐 때만)
   useEffect(() => {
@@ -346,8 +407,18 @@ function App() {
               ...(result?.base64 ? { video: result.base64 } : {}),
               ...(result?.mediaId ? { mediaId: result.mediaId } : {}),
               ...(result?.videoPath ? { videoPath: result.videoPath } : {}),
+              ...(result?.videoSaveId ? { videoSaveId: result.videoSaveId } : {}),
               ...(result?.error ? { error: result.error } : {}),
             })
+
+            // ── T2V 완료 → 번호 매칭으로 씬에 videoT2V 동기화 ──
+            if (newStatus === 'complete' && result?.base64) {
+              const sceneId = id.replace('vscene_', 'scene_')
+              scenesHook.updateScene(sceneId, {
+                videoT2V: result.base64,
+                videoT2VPath: result.videoPath || null,
+              })
+            }
           },
         })
         break
@@ -360,9 +431,13 @@ function App() {
           toast.warning(t('videoSelection.noneSelected'))
           return
         }
+        const GALLERY_PFX = 'gallery::'
         const resolvedPairs = selectedFramePairs.map(p => {
-          const startScene = scenes.find(s => s.id === p.startSceneId)
-          const endScene = scenes.find(s => s.id === p.endSceneId)
+          // gallery:: prefix면 mediaId 직접 추출, 아니면 씬에서 resolve
+          const startIsGallery = p.startSceneId?.startsWith(GALLERY_PFX)
+          const endIsGallery = p.endSceneId?.startsWith(GALLERY_PFX)
+          const startScene = startIsGallery ? null : scenes.find(s => s.id === p.startSceneId)
+          const endScene = endIsGallery ? null : scenes.find(s => s.id === p.endSceneId)
 
           // promptSource에 따라 effective prompt 계산
           const originalIdx = framePairs.indexOf(p)
@@ -376,8 +451,8 @@ function App() {
           return {
             ...p,
             prompt: effectivePrompt,
-            _startMediaId: startScene?.mediaId || null,
-            _endMediaId: endScene?.mediaId || null,
+            _startMediaId: startIsGallery ? p.startSceneId.slice(GALLERY_PFX.length) : (startScene?.mediaId || null),
+            _endMediaId: endIsGallery ? p.endSceneId.slice(GALLERY_PFX.length) : (endScene?.mediaId || null),
           }
         })
         videoAutomation.start({
@@ -388,17 +463,34 @@ function App() {
           videoResolution: settings.videoResolution || '1080p',
           videoBatchCount: settings.videoBatchCount || 1,
           onItemUpdate: (id, newStatus, result) => {
-            setFramePairs(prev => prev.map(p =>
-              p.id === id ? {
-                ...p, status: newStatus,
-                ...(newStatus === 'generating' ? { generatingStartedAt: Date.now() } : {}),
-                ...(result?.base64 ? { video: result.base64 } : {}),
-                ...(result?.mediaId ? { mediaId: result.mediaId } : {}),
-                ...(result?.generationId ? { generationId: result.generationId } : {}),
-                ...(result?.videoPath ? { videoPath: result.videoPath } : {}),
-                ...(result?.error ? { error: result.error } : {}),
-              } : p
-            ))
+            setFramePairs(prev => {
+              const updated = prev.map(p =>
+                p.id === id ? {
+                  ...p, status: newStatus,
+                  ...(newStatus === 'generating' ? { generatingStartedAt: Date.now() } : {}),
+                  ...(result?.base64 ? { video: result.base64, base64: result.base64 } : {}),
+                  ...(result?.mediaId ? { mediaId: result.mediaId } : {}),
+                  ...(result?.generationId ? { generationId: result.generationId } : {}),
+                  ...(result?.videoPath ? { videoPath: result.videoPath } : {}),
+                  ...(result?.videoSaveId ? { videoSaveId: result.videoSaveId } : {}),
+                  ...(result?.error ? { error: result.error } : {}),
+                } : p
+              )
+
+              // ── I2V 완료 → startSceneId로 씬에 videoI2V 동기화 ──
+              // prev를 사용해 stale closure 방지
+              if (newStatus === 'complete' && result?.base64) {
+                const fp = prev.find(p => p.id === id)
+                if (fp?.startSceneId && !fp.startSceneId.startsWith('gallery::')) {
+                  scenesHook.updateScene(fp.startSceneId, {
+                    videoI2V: result.base64,
+                    videoI2VPath: result.videoPath || null,
+                  })
+                }
+              }
+
+              return updated
+            })
           },
         })
         break
@@ -544,22 +636,12 @@ function App() {
             />
           )}
           {activeTab === 'video-text' && (
-            <>
-              <PromptInput
-                value={videoScenes.map(s => s.prompt).join('\n')}
-                onChange={handleVideoTextChange}
-                disabled={anyRunning}
-                placeholder={t('prompt.videoPlaceholder')}
-              />
-              {videoScenes.length > 0 && (
-                <SelectablePromptList
-                  items={videoScenes}
-                  onToggle={videoScenesHook.toggleSelect}
-                  onToggleAll={videoScenesHook.toggleSelectAll}
-                  disabled={anyRunning}
-                />
-              )}
-            </>
+            <PromptInput
+              value={videoScenes.map(s => s.prompt).join('\n')}
+              onChange={handleVideoTextChange}
+              disabled={anyRunning}
+              placeholder={t('prompt.videoPlaceholder')}
+            />
           )}
           {activeTab === 'frame-to-video' && (
             <FrameToVideoPanel
@@ -572,6 +654,9 @@ function App() {
               onShowSceneDetail={(scene) => setSelectedScene(scene)}
               disabled={anyRunning}
               t={t}
+              galleryItems={galleryItems}
+              galleryLoading={galleryLoading}
+              onLoadGallery={loadGallery}
             />
           )}
           {activeTab === 'list' && (
@@ -691,7 +776,16 @@ function App() {
           />
         )}
         {activeTab === 'video-text' && (
-          <ResultsTable items={videoScenes} mediaType="video" onShowDetail={(item) => setSelectedVideo(item)} />
+          <ResultsTable
+            items={videoScenes}
+            mediaType="video"
+            onShowDetail={(item) => setSelectedVideo(item)}
+            selectable={true}
+            onToggle={videoScenesHook.toggleSelect}
+            onToggleAll={videoScenesHook.toggleSelectAll}
+            onPromptEdit={(id, newPrompt) => videoScenesHook.updateVideoScene(id, { prompt: newPrompt })}
+            disabled={anyRunning}
+          />
         )}
         {activeTab === 'frame-to-video' && (
           <ResultsTable items={framePairs} mediaType="frame-pair" onShowDetail={(item) => setSelectedVideo(item)} />

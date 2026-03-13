@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkVideoStatus: (params) => ipcRenderer.invoke('flow:check-video-status', params),
   downloadVideoUrl: (params) => ipcRenderer.invoke('flow:download-video-url', params),
   domDownloadVideo: (params) => ipcRenderer.invoke('flow:dom-download-video', params),
+  upscaleVideo: (params) => ipcRenderer.invoke('flow:upscale-video', params),
+  fetchGallery: (params) => ipcRenderer.invoke('flow:fetch-gallery', params),
 
   // File System
   getDefaultWorkFolder: () => ipcRenderer.invoke('fs:get-default-work-folder'),

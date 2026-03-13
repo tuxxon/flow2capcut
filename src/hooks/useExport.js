@@ -14,6 +14,25 @@ import { toast } from '../components/Toast'
 import { incrementExportCount } from '../firebase/functions'
 import useI18n from './useI18n'
 
+/**
+ * Export 미디어 결정: 사용자 선택 > auto (I2V > T2V > image)
+ */
+function resolveExportMedia(scene) {
+  const choice = scene.exportMedia || 'auto'
+  if (choice === 'i2v' && scene.videoI2V)
+    return { type: 'video', data: scene.videoI2V, path: scene.videoI2VPath }
+  if (choice === 't2v' && scene.videoT2V)
+    return { type: 'video', data: scene.videoT2V, path: scene.videoT2VPath }
+  if (choice === 'image')
+    return { type: 'image', data: scene.image, path: scene.imagePath }
+  // auto: I2V > T2V > image
+  if (scene.videoI2V)
+    return { type: 'video', data: scene.videoI2V, path: scene.videoI2VPath }
+  if (scene.videoT2V)
+    return { type: 'video', data: scene.videoT2V, path: scene.videoT2VPath }
+  return { type: 'image', data: scene.image, path: scene.imagePath }
+}
+
 export function useExport({
   settings,
   scenes,
@@ -32,7 +51,7 @@ export function useExport({
 
   // Handle export button click - open modal
   const handleExportClick = () => {
-    const validScenes = scenes.filter(s => s.image || s.imagePath)
+    const validScenes = scenes.filter(s => s.image || s.imagePath || s.videoT2V || s.videoI2V)
     if (validScenes.length === 0) {
       toast.warning(t('toast.noGeneratedImages'))
       return
@@ -55,7 +74,7 @@ export function useExport({
 
   // Handle export confirm from modal
   const handleExportConfirm = async ({ capcutProjectNumber, scaleMode, kenBurns, kenBurnsMode, kenBurnsCycle, kenBurnsScaleMin, kenBurnsScaleMax, subtitleOption }) => {
-    const validScenes = scenes.filter(s => s.image || s.imagePath)
+    const validScenes = scenes.filter(s => s.image || s.imagePath || s.videoT2V || s.videoI2V)
 
     // 파일 경로가 있는 씬이 있으면 권한 확인
     const hasFilePaths = validScenes.some(s => s.imagePath && !s.imagePath.startsWith('data:'))
@@ -79,17 +98,24 @@ export function useExport({
       const project = {
         name: settings.projectName || generateProjectName(),
         format: settings.aspectRatio === '9:16' ? 'short' : 'landscape',
-        scenes: validScenes.map(s => ({
-          id: s.id,
-          image_path: s.imagePath || s.image, // 파일 경로 또는 base64
-          image_fallback: s.image, // 파일 읽기 실패 시 fallback용 base64
-          image_duration: s.duration || settings.defaultDuration || 3,
-          image_size: s.image_size || null,
-          subtitle_ko: s.subtitle || '',  // 한국어 자막
-          subtitle_en: s.subtitle_en || '',  // 영어 자막
-          subtitle: s.subtitle || '',
-          title: s.title || ''
-        })),
+        scenes: validScenes.map(s => {
+          const media = resolveExportMedia(s)
+          return {
+            id: s.id,
+            // ── 선택된 미디어 (비디오 or 이미지) ──
+            media_type: media.type,
+            media_path: media.path || media.data,
+            // 기존 이미지 필드 유지 (폴백용)
+            image_path: s.imagePath || s.image,
+            image_fallback: s.image,
+            image_duration: s.duration || settings.defaultDuration || 3,
+            image_size: s.image_size || null,
+            subtitle_ko: s.subtitle || '',
+            subtitle_en: s.subtitle_en || '',
+            subtitle: s.subtitle || '',
+            title: s.title || ''
+          }
+        }),
         videos: [
           // T2V 비디오 (videoScenes)
           ...videoScenes

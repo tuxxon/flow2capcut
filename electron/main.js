@@ -45,6 +45,7 @@ const VIDEO_T2V_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoText`
 const VIDEO_I2V_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoStartImage`
 const VIDEO_I2V_START_END_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoStartAndEndImage`
 const VIDEO_STATUS_URL = `${BASE_API_URL}/video:batchCheckAsyncVideoGenerationStatus`
+const VIDEO_UPSCALE_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoUpsampleVideo`
 const RECAPTCHA_SITE_KEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV'
 const RECAPTCHA_ACTION = 'generate'
 
@@ -898,7 +899,7 @@ const videoDeps = {
   setPendingVideoGeneration: (v) => { pendingVideoGeneration = v },
   getPendingI2VInjection: () => pendingI2VInjection,
   setPendingI2VInjection: (v) => { pendingI2VInjection = v },
-  SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL,
+  SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL, VIDEO_UPSCALE_URL,
   API_HEADERS, FLOW_URL,
 }
 registerVideoIPC(ipcMain, videoDeps)

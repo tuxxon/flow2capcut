@@ -1331,4 +1331,63 @@ export function registerFlowAPIIPC(ipcMain, deps) {
       return { valid: false, expiry: null }
     }
   })
+
+  // ─── Fetch Gallery (Project Media) ────────────────────────────
+  ipcMain.handle('flow:fetch-gallery', async (event, { token, projectId }) => {
+    try {
+      if (!projectId) {
+        // 캡처된 projectId 사용
+        projectId = getCapturedProjectId?.()
+      }
+      if (!projectId) {
+        return { success: false, error: 'No projectId available', items: [] }
+      }
+
+      const input = JSON.stringify({ json: { projectId } })
+      const url = `https://labs.google/fx/api/trpc/flow.projectInitialData?input=${encodeURIComponent(input)}`
+
+      console.log('[Gallery] Fetching project media for:', projectId.substring(0, 12) + '...')
+      const resp = await sessionFetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (!resp.ok) {
+        return { success: false, error: `Gallery fetch failed: ${resp.status}`, items: [] }
+      }
+
+      const text = await resp.text()
+      const data = parseFlowResponse(text)
+
+      // tRPC 응답 구조: result.data.json.projectContents.media[]
+      // 또는: result.data.projectContents.media[]
+      const projectContents =
+        data?.result?.data?.json?.projectContents ||
+        data?.result?.data?.projectContents ||
+        {}
+      const media = Array.isArray(projectContents.media) ? projectContents.media : []
+
+      console.log(`[Gallery] Found ${media.length} media items`)
+
+      // 이미지 미디어만 추출 (fifeUrl 있는 것)
+      const items = media
+        .map(m => {
+          const mediaId = m.name || m.mediaId || m.id || ''
+          const fifeUrl =
+            m.image?.generatedImage?.fifeUrl ||
+            m.image?.uploadedImage?.fifeUrl ||
+            null
+          return { mediaId, url: fifeUrl }
+        })
+        .filter(m => m.url && m.mediaId)
+
+      console.log(`[Gallery] ${items.length} image items extracted`)
+      return { success: true, items }
+    } catch (e) {
+      console.error('[Gallery] Error:', e.message)
+      return { success: false, error: e.message, items: [] }
+    }
+  })
 }

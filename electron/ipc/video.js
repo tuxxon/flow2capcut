@@ -18,7 +18,7 @@ export function registerVideoIPC(ipcMain, deps) {
     getCapturedProjectId, setCapturedProjectId,
     getPendingVideoGeneration, setPendingVideoGeneration,
     getPendingI2VInjection, setPendingI2VInjection,
-    SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL,
+    SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL, VIDEO_UPSCALE_URL,
     API_HEADERS, FLOW_URL,
   } = deps
 
@@ -615,6 +615,187 @@ export function registerVideoIPC(ipcMain, deps) {
       return { success: true, statuses }
     } catch (e) {
       console.error('[Flow VideoStatus] Exception:', e.message)
+      return { success: false, error: e.message }
+    }
+  })
+
+  // ─── Video Upscale (API 기반, DOM 불필요) ───
+  // AutoFlow 10.7.58 역공학: upscaleVideoDirect (sidepanel.js:20223)
+  // mediaId → workflowId 조회 → reCAPTCHA → upscale 제출 → resultMediaName 반환
+  ipcMain.handle('flow:upscale-video', async (event, { token, mediaId, projectId, resolution, aspectRatio }) => {
+    const flowView = getFlowView()
+    if (!token) return { success: false, error: 'No token' }
+    if (!mediaId) return { success: false, error: 'No mediaId' }
+    if (!flowView) return { success: false, error: 'Flow view not ready' }
+
+    const normalizedRes = String(resolution || '1080p').toLowerCase()
+    const resolutionEnum = normalizedRes === '4k' ? 'VIDEO_RESOLUTION_4K' : 'VIDEO_RESOLUTION_1080P'
+    const modelKey = normalizedRes === '4k' ? 'veo_3_1_upsampler_4k' : 'veo_3_1_upsampler_1080p'
+    const pid = projectId || getCapturedProjectId() || ''
+
+    console.log('[Flow Upscale] Starting upscale — mediaId:', mediaId?.substring(0, 20),
+      'resolution:', normalizedRes, 'projectId:', pid?.substring(0, 8))
+
+    try {
+      // 페이지 컨텍스트에서 전체 실행 (reCAPTCHA origin 일치 + projectInitialData 상대 URL)
+      const result = await flowView.webContents.executeJavaScript(`
+        (async function() {
+          try {
+            const mediaId = ${JSON.stringify(mediaId)};
+            const pid = ${JSON.stringify(pid)};
+            const token = ${JSON.stringify(token)};
+            const endpoint = ${JSON.stringify(VIDEO_UPSCALE_URL)};
+            const resolutionEnum = ${JSON.stringify(resolutionEnum)};
+            const modelKey = ${JSON.stringify(modelKey)};
+            const videoAspectRatio = ${JSON.stringify(aspectRatio || 'VIDEO_ASPECT_RATIO_LANDSCAPE')};
+
+            // 1. projectInitialData에서 workflowId 조회
+            let workflowId = '';
+            if (pid) {
+              const pdUrl = '/fx/api/trpc/flow.projectInitialData?input='
+                + encodeURIComponent(JSON.stringify({ json: { projectId: pid } }))
+                + '&af_upscale_ts=' + Date.now();
+              const pdResp = await fetch(pdUrl, {
+                method: 'GET', cache: 'no-store', credentials: 'same-origin',
+                headers: { accept: 'application/json, text/plain, */*' }
+              });
+              if (pdResp.ok) {
+                const pdData = await pdResp.json().catch(() => null);
+                // TRPC 응답 언래핑 (AutoFlow unwrapProjectData 패턴)
+                const unwrap = (raw) => {
+                  if (!raw) return null;
+                  const queue = [raw]; const seen = new Set();
+                  while (queue.length > 0) {
+                    const node = queue.shift();
+                    if (!node || typeof node !== 'object' || seen.has(node)) continue;
+                    seen.add(node);
+                    const candidate = node.projectContents ? node : node.data;
+                    const pc = candidate?.projectContents || null;
+                    if (pc && (pc.workflows !== undefined || pc.media !== undefined)) return candidate;
+                    if (node.json) queue.push(node.json);
+                    if (node.result) queue.push(node.result);
+                    if (node.data) queue.push(node.data);
+                    if (Array.isArray(node)) node.forEach(i => queue.push(i));
+                  }
+                  return null;
+                };
+                const pc = unwrap(pdData)?.projectContents || {};
+                const asArr = (v) => v ? (Array.isArray(v) ? v : Object.keys(v).sort((a,b)=>a-b).map(k=>v[k]).filter(Boolean)) : [];
+                const mediaItems = asArr(pc.media);
+                const workflows = asArr(pc.workflows);
+                const bareId = mediaId.split('/').pop();
+
+                // media[].workflowId 직접 매칭
+                for (const m of mediaItems) {
+                  const mName = (m?.name || m?.mediaId || m?.id || '').split('/').pop();
+                  if (mName !== bareId) continue;
+                  const wid = String(m?.workflowId || '').trim();
+                  if (wid) { workflowId = wid.split('/').pop() || wid; break; }
+                }
+                // fallback: workflows[].metadata.primaryMediaId 매칭
+                if (!workflowId) {
+                  for (const w of workflows) {
+                    const pmId = (w?.metadata?.primaryMediaId || '').split('/').pop();
+                    if (pmId !== bareId) continue;
+                    const wid = (w?.workflowId || w?.name || '').split('/').pop();
+                    if (wid) { workflowId = wid; break; }
+                  }
+                }
+              }
+            }
+            if (!workflowId) return { ok: false, error: 'Could not resolve workflowId for mediaId: ' + mediaId.substring(0, 20) };
+
+            // 2. reCAPTCHA 토큰 획득 (AutoFlow 패턴: ready() 대기 후 execute())
+            let recaptchaToken = '';
+            try {
+              const g = window.grecaptcha;
+              if (g?.enterprise?.execute) {
+                // ready() 대기 — reCAPTCHA가 완전히 초기화될 때까지 기다림
+                if (g.enterprise.ready) {
+                  await new Promise(resolve => g.enterprise.ready(resolve));
+                }
+                recaptchaToken = await g.enterprise.execute('6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV', { action: 'generate' });
+                recaptchaToken = String(recaptchaToken || '').trim();
+                console.log('[Flow Upscale] reCAPTCHA token obtained, length:', recaptchaToken.length);
+              } else {
+                console.warn('[Flow Upscale] grecaptcha.enterprise.execute not available');
+              }
+            } catch (e) {
+              console.warn('[Flow Upscale] reCAPTCHA error:', e.message);
+            }
+
+            // 3. Upscale 요청 body 구성 (AutoFlow buildClientContext 패턴)
+            const body = {
+              mediaGenerationContext: { batchId: crypto.randomUUID() },
+              clientContext: {
+                projectId: pid,
+                tool: 'PINHOLE',
+                userPaygateTier: 'PAYGATE_TIER_ONE',
+                sessionId: ';' + Date.now(),
+                recaptchaContext: {
+                  token: recaptchaToken,
+                  applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB'
+                }
+              },
+              requests: [{
+                resolution: resolutionEnum,
+                aspectRatio: videoAspectRatio,
+                seed: Math.floor(Math.random() * 2147483647),
+                videoModelKey: modelKey,
+                metadata: { workflowId },
+                videoInput: { mediaId }
+              }],
+              useV2ModelConfig: true
+            };
+
+            // 4. Upscale API 호출 (페이지 컨텍스트 fetch — origin 일치)
+            const resp = await fetch(endpoint, {
+              method: 'POST',
+              headers: { authorization: 'Bearer ' + token },
+              body: JSON.stringify(body)
+            });
+            const text = await resp.text().catch(() => '');
+            if (!resp.ok) return { ok: false, error: 'HTTP ' + resp.status + ': ' + (text || '').substring(0, 200) };
+
+            // 5. 응답에서 resultMediaName 추출 (_upsampled suffix)
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch {}
+
+            let resultMediaName = '';
+            if (data) {
+              const candidates = [];
+              if (Array.isArray(data.operations))
+                for (const item of data.operations) candidates.push(item?.operation?.name);
+              if (Array.isArray(data.media))
+                for (const item of data.media) candidates.push(item?.name);
+              for (const c of candidates) {
+                const name = String(c || '').trim();
+                if (/_upsampled$/i.test(name)) { resultMediaName = name; break; }
+              }
+            }
+
+            return { ok: true, resultMediaName, workflowId, recaptchaLen: recaptchaToken.length, responseKeys: data ? Object.keys(data).slice(0, 12) : [] };
+          } catch (e) {
+            return { ok: false, error: e.message };
+          }
+        })()
+      `)
+
+      if (!result.ok) {
+        console.warn('[Flow Upscale] ❌ Failed:', result.error)
+        return { success: false, error: result.error }
+      }
+
+      if (result.resultMediaName) {
+        console.log('[Flow Upscale] ✅ Upscale submitted — resultMediaName:', result.resultMediaName,
+          'workflowId:', result.workflowId)
+        return { success: true, resultMediaName: result.resultMediaName, workflowId: result.workflowId }
+      }
+
+      console.warn('[Flow Upscale] ⚠️ No _upsampled media name. Response keys:', result.responseKeys)
+      return { success: false, error: 'No upsampled media name in response. Keys: ' + (result.responseKeys || []).join(',') }
+    } catch (e) {
+      console.error('[Flow Upscale] Error:', e.message)
       return { success: false, error: e.message }
     }
   })

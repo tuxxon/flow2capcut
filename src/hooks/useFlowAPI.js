@@ -184,6 +184,40 @@ export function useFlowAPI() {
   }, [getAccessToken, projectId])
 
   /**
+   * 비디오 업스케일 (1080p/4K) 제출
+   * @param {string} mediaId - 원본 비디오의 mediaId
+   * @param {string} resolution - '1080p' 또는 '4k'
+   * @returns {{ success, resultMediaName }}
+   */
+  const upscaleVideo = useCallback(async (mediaId, resolution, aspectRatio) => {
+    const token = await getAccessToken()
+    if (!token) return { success: false, error: 'No access token' }
+
+    try {
+      return await window.electronAPI.upscaleVideo({
+        token, mediaId, projectId, resolution, aspectRatio
+      })
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }, [getAccessToken, projectId])
+
+  /**
+   * 갤러리 (프로젝트 미디어) 조회
+   * @returns {{ success, items: [{ mediaId, url }] }}
+   */
+  const fetchGallery = useCallback(async () => {
+    const token = await getAccessToken()
+    if (!token) return { success: false, error: 'No access token', items: [] }
+
+    try {
+      return await window.electronAPI.fetchGallery({ token, projectId })
+    } catch (error) {
+      return { success: false, error: error.message, items: [] }
+    }
+  }, [getAccessToken, projectId])
+
+  /**
    * 토큰 캐시 초기화 (401 에러 시 호출)
    * 다음 getAccessToken 호출 시 Flow 웹뷰에서 새로 추출
    */
@@ -205,6 +239,8 @@ export function useFlowAPI() {
     generateVideoT2V,
     generateVideoI2V,
     checkVideoStatus,
+    upscaleVideo,
+    fetchGallery,
     setStopRequested
   }
 }

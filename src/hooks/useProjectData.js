@@ -52,27 +52,51 @@ async function loadProjectWithImages(projectName) {
   const withMediaId = scenesWithImages.filter(s => s.mediaId).length
   console.log(`[ProjectData] ✅ Loaded: ${withImages}/${sceneCount} images, ${withSubtitles}/${sceneCount} subtitles, ${withMediaId}/${sceneCount} mediaIds`)
 
-  // videoScenes 비디오 파일에서 로드
+  // videoScenes 비디오 파일에서 로드 (새 명명 t2v_N 우선, 기존 vscene_N 폴백)
   const videoScenesWithMedia = await Promise.all(
     (result.data.videoScenes || []).map(async (vs) => {
       if (vs.id && !vs.video) {
-        const vidResult = await fileSystemAPI.readResource(projectName, 'videos', vs.id)
+        // 새 명명 규칙 (videoSaveId = t2v_N) 우선
+        const primaryId = vs.videoSaveId || vs.id
+        const vidResult = await fileSystemAPI.readResource(projectName, 'videos', primaryId)
         if (vidResult.success) {
           return { ...vs, video: vidResult.data }
+        }
+        // 폴백: videoSaveId가 있었다면 기존 ID(vscene_N)로도 시도
+        if (vs.videoSaveId) {
+          const fallback = await fileSystemAPI.readResource(projectName, 'videos', vs.id)
+          if (fallback.success) {
+            return { ...vs, video: fallback.data }
+          }
+        }
+        // 파일 삭제됨 → complete 상태 리셋
+        if (vs.status === 'complete') {
+          return { ...vs, status: 'waiting', video: undefined }
         }
       }
       return vs
     })
   )
 
-  // framePairs 비디오 파일 로드
+  // framePairs 비디오 파일 로드 (새 명명 i2v_N 우선, 기존 fp_N 폴백)
   const framePairsWithMedia = await Promise.all(
     (result.data.framePairs || []).map(async (fp) => {
       if (fp.id && !fp.base64 && fp.status === 'complete') {
-        const vidResult = await fileSystemAPI.readResource(projectName, 'videos', fp.id)
+        // 새 명명 규칙 (videoSaveId = i2v_N) 우선
+        const primaryId = fp.videoSaveId || fp.id
+        const vidResult = await fileSystemAPI.readResource(projectName, 'videos', primaryId)
         if (vidResult.success) {
           return { ...fp, base64: vidResult.data }
         }
+        // 폴백: videoSaveId가 있었다면 기존 ID(fp_N)로도 시도
+        if (fp.videoSaveId) {
+          const fallback = await fileSystemAPI.readResource(projectName, 'videos', fp.id)
+          if (fallback.success) {
+            return { ...fp, base64: fallback.data }
+          }
+        }
+        // 파일 삭제됨 → status 리셋
+        return { ...fp, status: 'waiting', base64: undefined, video: undefined }
       }
       return fp
     })
@@ -82,11 +106,38 @@ async function loadProjectWithImages(projectName) {
   const resetGenerating = (item) =>
     item.status === 'generating' ? { ...item, status: 'pending', generatingStartedAt: undefined } : item
 
+  // ── 완성된 비디오 → 씬에 동기화 (videoT2V / videoI2V) ──
+  const finalScenes = scenesWithImages.map(resetGenerating)
+  const finalVideoScenes = videoScenesWithMedia.map(resetGenerating)
+  const finalFramePairs = framePairsWithMedia.map(resetGenerating)
+
+  for (const vs of finalVideoScenes) {
+    if ((vs.status === 'complete' || vs.status === 'done') && vs.video) {
+      const sceneId = vs.id.replace('vscene_', 'scene_')
+      const scene = finalScenes.find(s => s.id === sceneId)
+      if (scene && !scene.videoT2V) {
+        scene.videoT2V = vs.video
+        scene.videoT2VPath = vs.videoPath || null
+        console.log(`[ProjectData] Synced T2V video → ${sceneId}`)
+      }
+    }
+  }
+  for (const fp of finalFramePairs) {
+    if ((fp.status === 'complete' || fp.status === 'done') && fp.base64 && fp.startSceneId && !fp.startSceneId.startsWith('gallery::')) {
+      const scene = finalScenes.find(s => s.id === fp.startSceneId)
+      if (scene && !scene.videoI2V) {
+        scene.videoI2V = fp.base64
+        scene.videoI2VPath = fp.videoPath || null
+        console.log(`[ProjectData] Synced I2V video → ${fp.startSceneId}`)
+      }
+    }
+  }
+
   return {
-    scenes: scenesWithImages.map(resetGenerating),
+    scenes: finalScenes,
     references: refsWithImages,
-    videoScenes: videoScenesWithMedia.map(resetGenerating),
-    framePairs: framePairsWithMedia.map(resetGenerating),
+    videoScenes: finalVideoScenes,
+    framePairs: finalFramePairs,
   }
 }
 
@@ -100,8 +151,8 @@ async function saveCurrentProject(settings, scenes, references, videoScenes = []
   const exists = await fileSystemAPI.projectExists(settings.projectName)
   if (!exists) return
 
-  // scenes에서 image(base64) 제외
-  const scenesWithoutImages = scenes.map(({ image, ...rest }) => rest)
+  // scenes에서 base64 데이터 제외 (image, videoT2V, videoI2V)
+  const scenesWithoutImages = scenes.map(({ image, videoT2V, videoI2V, ...rest }) => rest)
 
   // references에서 data(base64) 제외
   const refsWithoutData = references.map(({ data, ...rest }) => rest)

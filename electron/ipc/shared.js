@@ -195,6 +195,10 @@ export function createSharedHelpers(ctx) {
           try {
             const g = window.grecaptcha;
             if (!g || !g.enterprise || !g.enterprise.execute) return '';
+            // AutoFlow 패턴: ready() 대기 후 execute()
+            if (g.enterprise.ready) {
+              await new Promise(resolve => g.enterprise.ready(resolve));
+            }
             const token = await g.enterprise.execute(
               '${RECAPTCHA_SITE_KEY}',
               { action: '${RECAPTCHA_ACTION}' }
@@ -304,19 +308,41 @@ export function createSharedHelpers(ctx) {
   }
 
   // ─── fetchMediaAsBase64 ───────────────────────────────────────
-  /** mediaId로 실제 이미지 URL 가져와서 base64로 변환 */
+  /** mediaId로 실제 미디어 URL 가져와서 base64로 변환 */
   async function fetchMediaAsBase64(token, mediaId) {
-    // Step 1: media redirect URL 가져오기
     const redirectUrl = `${MEDIA_REDIRECT_URL}?input=${encodeURIComponent(JSON.stringify({ json: { name: mediaId } }))}`
-    const redirectRes = await sessionFetch(redirectUrl, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
 
-    if (!redirectRes.ok) {
-      throw new Error(`Media redirect HTTP ${redirectRes.status}`)
+    // Step 1: media redirect URL 가져오기
+    // flowPageFetch 우선 (페이지 쿠키 포함 → TRPC 인증 성공률 높음)
+    // 실패 시 sessionFetch 폴백 (이미지 등 쿠키 불필요한 경우)
+    let redirectText = ''
+    let redirectOk = false
+
+    try {
+      const pageResult = await flowPageFetch(redirectUrl, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      redirectOk = pageResult.ok
+      redirectText = pageResult.text || ''
+      if (!redirectOk) {
+        console.warn(`[fetchMedia] flowPageFetch HTTP ${pageResult.status}, trying sessionFetch...`)
+      }
+    } catch (e) {
+      console.warn('[fetchMedia] flowPageFetch failed:', e.message, ', trying sessionFetch...')
     }
 
-    const redirectText = await redirectRes.text()
+    // flowPageFetch 실패 시 sessionFetch 폴백
+    if (!redirectOk) {
+      const redirectRes = await sessionFetch(redirectUrl, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!redirectRes.ok) {
+        throw new Error(`Media redirect HTTP ${redirectRes.status}`)
+      }
+      redirectText = await redirectRes.text()
+    }
+
     const redirectData = parseFlowResponse(redirectText)
     const mediaUrl = redirectData?.result?.data?.json?.url || redirectData?.result?.data?.json?.redirectUrl
 
@@ -324,7 +350,7 @@ export function createSharedHelpers(ctx) {
       throw new Error('No media URL in redirect response')
     }
 
-    // Step 2: 실제 이미지 다운로드 → base64
+    // Step 2: 실제 미디어 다운로드 → base64 (CDN은 쿠키 불필요)
     const mediaRes = await sessionFetch(mediaUrl)
     if (!mediaRes.ok) {
       throw new Error(`Media fetch HTTP ${mediaRes.status}`)

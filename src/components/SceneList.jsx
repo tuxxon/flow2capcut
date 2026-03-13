@@ -1,5 +1,5 @@
 /**
- * SceneList Component - 목록 탭 (시간 + 편집 + 히스토리)
+ * SceneList Component - 목록 탭 (시간 + 자막 + 미디어 선택 + 히스토리)
  */
 
 import { useState } from 'react'
@@ -7,6 +7,7 @@ import { useI18n } from '../hooks/useI18n'
 import { formatTime, getRatioClass } from '../utils/formatters'
 import { UI } from '../config/defaults'
 import SceneDetailModal from './SceneDetailModal'
+import VideoDetailModal from './VideoDetailModal'
 import './SceneList.css'
 
 // 태그 매칭 여부 체크 (콤마, 세미콜론, 콜론 지원)
@@ -34,21 +35,37 @@ function checkTagMatch(tagValue, references, type) {
   return { matchedTags, unmatchedTags, allMatched: unmatchedTags.length === 0 }
 }
 
-function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, onShowDetail, references }) {
-  const [isEditing, setIsEditing] = useState(false)
-  
+/**
+ * Export 미디어 결정: auto → I2V > T2V > image
+ */
+function resolveExportMedia(scene) {
+  const choice = scene.exportMedia || 'auto'
+  if (choice !== 'auto') return choice
+  if (scene.videoI2V) return 'i2v'
+  if (scene.videoT2V) return 't2v'
+  return 'image'
+}
+
+function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, onShowDetail, onShowVideoDetail, references }) {
   const statusIcon = {
     pending: '⏳',
     generating: '⚙️',
     done: '✅',
     error: '❌'
   }[scene.status] || '⏳'
-  
+
   // 태그 매칭 상태 체크
   const charMatch = checkTagMatch(scene.characters, references, 'character')
   const sceneMatch = checkTagMatch(scene.scene_tag, references, 'scene')
   const styleMatch = checkTagMatch(scene.style_tag, references, 'style')
-  
+
+  // 현재 export 미디어 결정
+  const activeMedia = resolveExportMedia(scene)
+  const isSelected = (type) => activeMedia === type ? 'selected' : ''
+
+  // 미디어 개수 (선택 UI 필요 여부)
+  const mediaCount = [scene.image, scene.videoT2V, scene.videoI2V].filter(Boolean).length
+
   // 매칭 상태 아이콘 (커스텀 툴팁)
   const MatchIndicator = ({ match }) => {
     if (!match) return null
@@ -71,27 +88,115 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
       </span>
     )
   }
-  
+
+  // 비디오 src 생성 헬퍼
+  const toVideoSrc = (data) => {
+    if (!data) return ''
+    return data.startsWith('data:') ? data : `data:video/mp4;base64,${data}`
+  }
+
+  // 비디오 duration 감지 (Promise) — base64 데이터에서 즉시 감지
+  const detectVideoDuration = (videoData) => {
+    return new Promise((resolve) => {
+      if (!videoData) return resolve(null)
+      const vid = document.createElement('video')
+      vid.preload = 'metadata'
+      vid.muted = true
+      vid.onloadedmetadata = () => {
+        const dur = Math.round(vid.duration * 10) / 10
+        resolve(dur > 0 ? dur : null)
+        vid.src = ''
+      }
+      vid.onerror = () => resolve(null)
+      vid.src = videoData.startsWith('data:') ? videoData : `data:video/mp4;base64,${videoData}`
+      setTimeout(() => resolve(null), 3000) // 3초 타임아웃
+    })
+  }
+
+  // 비디오 메타데이터 로드 → duration 감지 및 저장 (썸네일 onLoadedMetadata 백업용)
+  const handleVideoMetadata = (e, type) => {
+    const videoDuration = Math.round(e.target.duration * 10) / 10
+    if (!videoDuration || videoDuration <= 0) return
+
+    const durationField = type === 't2v' ? 'videoT2VDuration' : 'videoI2VDuration'
+
+    // 이미 저장된 경우 스킵
+    if (scene[durationField] === videoDuration) return
+
+    const updates = { [durationField]: videoDuration }
+
+    // imageDuration 아직 없으면 현재 duration을 이미지 기본 duration으로 저장
+    if (!scene.imageDuration) {
+      updates.imageDuration = scene.duration
+    }
+
+    // 현재 활성 미디어가 이 비디오면 duration도 같이 업데이트
+    if (activeMedia === type) {
+      updates.duration = videoDuration
+      updates.endTime = scene.startTime + videoDuration
+    }
+
+    onUpdate(scene.id, updates)
+  }
+
+  // Export 미디어 전환 + duration 자동 조정
+  const switchExportMedia = async (type) => {
+    const updates = { exportMedia: type }
+
+    if (type === 'image') {
+      // 이미지 선택 → imageDuration으로 복원 (없으면 현재 유지)
+      const imgDur = scene.imageDuration || scene.duration
+      updates.duration = imgDur
+      updates.endTime = scene.startTime + imgDur
+    } else {
+      // 비디오 선택 (t2v / i2v)
+      const videoData = type === 't2v' ? scene.videoT2V : scene.videoI2V
+      const durationField = type === 't2v' ? 'videoT2VDuration' : 'videoI2VDuration'
+
+      // 캐시된 duration 사용, 없으면 즉시 감지
+      let videoDur = scene[durationField]
+      if (!videoDur && videoData) {
+        videoDur = await detectVideoDuration(videoData)
+        if (videoDur) updates[durationField] = videoDur
+      }
+
+      if (videoDur) {
+        if (!scene.imageDuration) {
+          updates.imageDuration = scene.duration
+        }
+        updates.duration = videoDur
+        updates.endTime = scene.startTime + videoDur
+      }
+    }
+
+    onUpdate(scene.id, updates)
+  }
+
   return (
     <tr className={`scene-row status-${scene.status}`}>
       <td className="col-id">
         {index + 1}
       </td>
-      
+
       <td className="col-time">
         <span className="time-display">
           {formatTime(scene.startTime)} ~ {formatTime(scene.endTime)}
         </span>
-        <input 
+        <input
           type="number"
           className="duration-input"
           value={scene.duration}
           onChange={(e) => {
             const duration = parseFloat(e.target.value) || 3
-            onUpdate(scene.id, { 
+            const updates = {
               duration,
               endTime: scene.startTime + duration
-            })
+            }
+            // 이미지 모드에서 수동 변경 → imageDuration도 업데이트
+            if (activeMedia === 'image') {
+              updates.imageDuration = duration
+            }
+            onUpdate(scene.id, updates)
           }}
           min={UI.DURATION_MIN}
           max={UI.DURATION_MAX}
@@ -100,25 +205,21 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
           title={t('sceneList.durationTitle')}
         />
       </td>
-      
-      <td className="col-prompt">
+
+      {/* 자막 컬럼 (프롬프트 제거, 자막만 표시) */}
+      <td className="col-subtitle">
         <textarea
-          value={scene.prompt}
-          onChange={(e) => onUpdate(scene.id, { prompt: e.target.value })}
+          value={scene.subtitle || ''}
+          onChange={(e) => onUpdate(scene.id, { subtitle: e.target.value })}
           disabled={disabled}
           rows={2}
+          placeholder={t('sceneList.subtitlePlaceholder')}
         />
-        {scene.subtitle && (
-          <div className="subtitle-preview">
-            <span className="subtitle-icon">💬</span>
-            <span className="subtitle-text">{scene.subtitle}</span>
-          </div>
-        )}
       </td>
-      
+
       <td className="col-tags">
         <div className="tag-input-wrapper">
-          <input 
+          <input
             type="text"
             placeholder={t('sceneList.character')}
             value={scene.characters || ''}
@@ -130,7 +231,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
           <MatchIndicator match={charMatch} />
         </div>
         <div className="tag-input-wrapper">
-          <input 
+          <input
             type="text"
             placeholder={t('sceneList.background')}
             value={scene.scene_tag || ''}
@@ -142,7 +243,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
           <MatchIndicator match={sceneMatch} />
         </div>
         <div className="tag-input-wrapper">
-          <input 
+          <input
             type="text"
             placeholder={t('sceneList.style')}
             value={scene.style_tag || ''}
@@ -154,26 +255,108 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
           <MatchIndicator match={styleMatch} />
         </div>
       </td>
-      
-      <td className="col-image">
-        <div 
-          className={`image-cell ${ratioClass} clickable`}
-          onClick={() => onShowDetail(scene)}
-          title={t('headerExtra.clickToDetail')}
-        >
-          {scene.image ? (
-            <img
-              src={scene.image}
-              alt={`Scene ${index + 1}`}
-            />
-          ) : (
-            <span className={`status-icon ${scene.status === 'generating' ? 'spinner' : ''}`}>{statusIcon}</span>
+
+      {/* 미디어 컬럼 (이미지 + T2V + I2V 모두 표시, 선택 가능) */}
+      <td className="col-media">
+        <div className="media-selector">
+          {/* 이미지 */}
+          {scene.image && (
+            <div
+              className={`media-thumb ${isSelected('image')} clickable`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (mediaCount > 1) {
+                  switchExportMedia('image')
+                } else {
+                  onShowDetail(scene)
+                }
+              }}
+              onDoubleClick={() => onShowDetail(scene)}
+              title={`IMG${activeMedia === 'image' ? ' ✓' : ''}`}
+            >
+              <img src={scene.image} alt={`Scene ${index + 1}`} />
+              {mediaCount > 1 && <span className="media-label">IMG</span>}
+            </div>
+          )}
+          {/* T2V 비디오 */}
+          {scene.videoT2V && (
+            <div
+              className={`media-thumb ${isSelected('t2v')} clickable`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (mediaCount > 1) {
+                  switchExportMedia('t2v')
+                } else {
+                  onShowVideoDetail({
+                    id: `t2v_${scene.id.replace('scene_', '')}`,
+                    prompt: scene.prompt,
+                    video: scene.videoT2V,
+                    videoPath: scene.videoT2VPath,
+                    status: 'complete',
+                  })
+                }
+              }}
+              onDoubleClick={() => onShowVideoDetail({
+                id: `t2v_${scene.id.replace('scene_', '')}`,
+                prompt: scene.prompt,
+                video: scene.videoT2V,
+                videoPath: scene.videoT2VPath,
+                status: 'complete',
+              })}
+              title={`T2V${activeMedia === 't2v' ? ' ✓' : ''} — ${t('sceneList.dblClickToView') || 'Double-click to view'}`}
+            >
+              <video src={toVideoSrc(scene.videoT2V)} muted preload="metadata" onLoadedMetadata={(e) => handleVideoMetadata(e, 't2v')} />
+              <div className="play-button-overlay mini">▶</div>
+              {mediaCount > 1 && <span className="media-label">T2V</span>}
+            </div>
+          )}
+          {/* I2V 비디오 */}
+          {scene.videoI2V && (
+            <div
+              className={`media-thumb ${isSelected('i2v')} clickable`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (mediaCount > 1) {
+                  switchExportMedia('i2v')
+                } else {
+                  onShowVideoDetail({
+                    id: `i2v_${scene.id.replace('scene_', '')}`,
+                    prompt: scene.prompt,
+                    video: scene.videoI2V,
+                    videoPath: scene.videoI2VPath,
+                    status: 'complete',
+                  })
+                }
+              }}
+              onDoubleClick={() => onShowVideoDetail({
+                id: `i2v_${scene.id.replace('scene_', '')}`,
+                prompt: scene.prompt,
+                video: scene.videoI2V,
+                videoPath: scene.videoI2VPath,
+                status: 'complete',
+              })}
+              title={`I2V${activeMedia === 'i2v' ? ' ✓' : ''} — ${t('sceneList.dblClickToView') || 'Double-click to view'}`}
+            >
+              <video src={toVideoSrc(scene.videoI2V)} muted preload="metadata" onLoadedMetadata={(e) => handleVideoMetadata(e, 'i2v')} />
+              <div className="play-button-overlay mini">▶</div>
+              {mediaCount > 1 && <span className="media-label">I2V</span>}
+            </div>
+          )}
+          {/* 미디어 없음 → 상태 아이콘 */}
+          {mediaCount === 0 && (
+            <div
+              className={`image-cell ${ratioClass} clickable`}
+              onClick={() => onShowDetail(scene)}
+              title={t('headerExtra.clickToDetail')}
+            >
+              <span className={`status-icon ${scene.status === 'generating' ? 'spinner' : ''}`}>{statusIcon}</span>
+            </div>
           )}
         </div>
       </td>
-      
+
       <td className="col-actions">
-        <button 
+        <button
           className="btn-delete"
           onClick={() => onDelete(scene.id)}
           disabled={disabled || scene.status === 'generating'}
@@ -202,12 +385,18 @@ export default function SceneList({
 }) {
   const { t } = useI18n()
   const [detailModal, setDetailModal] = useState({ open: false, scene: null })
-  
-  // 상세 모달 열기
+  const [videoDetailModal, setVideoDetailModal] = useState({ open: false, video: null })
+
+  // 이미지 상세 모달 열기
   const handleShowDetail = (scene) => {
     setDetailModal({ open: true, scene })
   }
-  
+
+  // 비디오 상세 모달 열기
+  const handleShowVideoDetail = (videoData) => {
+    setVideoDetailModal({ open: true, video: videoData })
+  }
+
   // 모달에서 업데이트
   const handleUpdateFromModal = (sceneId, data) => {
     onUpdate(sceneId, data)
@@ -217,7 +406,7 @@ export default function SceneList({
       scene: prev.scene ? { ...prev.scene, ...data } : null
     }))
   }
-  
+
   if (scenes.length === 0) {
     return (
       <div className="scene-list-empty">
@@ -226,16 +415,16 @@ export default function SceneList({
       </div>
     )
   }
-  
+
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0)
-  
+
   const ratioClass = getRatioClass(aspectRatio)
-  
+
   // 현재 선택된 씬의 최신 상태 가져오기
-  const currentScene = detailModal.scene 
+  const currentScene = detailModal.scene
     ? scenes.find(s => s.id === detailModal.scene.id) || detailModal.scene
     : null
-  
+
   const handleClearAll = () => {
     if (window.confirm(t('sceneList.clearConfirm'))) {
       onClearAll?.()
@@ -264,16 +453,16 @@ export default function SceneList({
           </button>
         </div>
       </div>
-      
+
       <div className="scene-table-wrapper">
         <table className="scene-table">
           <thead>
             <tr>
               <th className="col-id">#</th>
               <th className="col-time">{t('sceneList.time')}</th>
-              <th className="col-prompt">{t('sceneList.promptCol')}</th>
+              <th className="col-subtitle">{t('sceneList.subtitle')}</th>
               <th className="col-tags">{t('sceneList.tags')}</th>
-              <th className="col-image">{t('sceneList.image')}</th>
+              <th className="col-media">{t('sceneList.media')}</th>
               <th className="col-actions"></th>
             </tr>
           </thead>
@@ -289,6 +478,7 @@ export default function SceneList({
                 ratioClass={ratioClass}
                 t={t}
                 onShowDetail={handleShowDetail}
+                onShowVideoDetail={handleShowVideoDetail}
                 references={references}
               />
             ))}
@@ -310,8 +500,8 @@ export default function SceneList({
           </span>
         </div>
       )}
-      
-      {/* 씬 상세 모달 */}
+
+      {/* 씬 상세 모달 (이미지) */}
       {detailModal.open && currentScene && (
         <SceneDetailModal
           scene={currentScene}
@@ -322,6 +512,16 @@ export default function SceneList({
           t={t}
           projectName={projectName}
           aspectRatio={aspectRatio}
+        />
+      )}
+
+      {/* 비디오 상세 모달 */}
+      {videoDetailModal.open && videoDetailModal.video && (
+        <VideoDetailModal
+          video={videoDetailModal.video}
+          onClose={() => setVideoDetailModal({ open: false, video: null })}
+          t={t}
+          projectName={projectName}
         />
       )}
     </div>

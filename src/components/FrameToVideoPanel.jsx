@@ -14,7 +14,165 @@
  *   t                  — i18n 함수
  */
 
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
+
+/** 초시계 아이콘 — 초침이 실시간 회전 */
+function StopwatchIcon({ size = 16 }) {
+  const r = size / 2
+  const cx = r, cy = r
+  const handLen = r * 0.6
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="stopwatch-icon">
+      <circle cx={cx} cy={cy} r={r - 1.5} fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <line x1={cx} y1={cy - r + 1.5} x2={cx} y2={cy - r + 3.5} stroke="currentColor" strokeWidth="1.2" />
+      <rect x={cx - 1} y={0} width={2} height={2} rx={0.5} fill="currentColor" />
+      <line
+        className="stopwatch-hand"
+        x1={cx} y1={cy}
+        x2={cx} y2={cy - handLen}
+        stroke="var(--accent, #3b82f6)" strokeWidth="1.5" strokeLinecap="round"
+        style={{ transformOrigin: `${cx}px ${cy}px` }}
+      />
+      <circle cx={cx} cy={cy} r={1.2} fill="var(--accent, #3b82f6)" />
+    </svg>
+  )
+}
+
+/** 경과 시간 표시 (1초마다 업데이트) */
+function ElapsedTime({ startedAt }) {
+  const [elapsed, setElapsed] = useState(() =>
+    startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0
+  )
+  useEffect(() => {
+    if (!startedAt) return
+    setElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [startedAt])
+  const min = Math.floor(elapsed / 60)
+  const sec = elapsed % 60
+  return <span>{min > 0 ? `${min}분 ${sec}초` : `${sec}초`}</span>
+}
+
+// 갤러리 ID prefix
+const GALLERY_PREFIX = 'gallery::'
+
+// 커스텀 드롭다운 — 썸네일 + 레이블 + 갤러리
+function SceneSelect({
+  value, onChange, placeholder, disabled: selectDisabled,
+  options, getLabel, onThumbClick,
+  galleryItems, galleryLoading, onLoadGallery
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const isGalleryValue = value?.startsWith(GALLERY_PREFIX)
+  const galleryMediaId = isGalleryValue ? value.slice(GALLERY_PREFIX.length) : null
+  const gallerySelected = isGalleryValue ? galleryItems?.find(g => g.mediaId === galleryMediaId) : null
+
+  const selected = isGalleryValue ? null : options.find(s => s.id === value)
+  const selectedLabel = gallerySelected
+    ? `📂 ${galleryMediaId.substring(0, 16)}...`
+    : selected ? getLabel(selected) : (placeholder || '—')
+  const selectedThumb = gallerySelected?.url || selected?.image || null
+
+  return (
+    <div className={`scene-dropdown${open ? ' open' : ''}${selectDisabled ? ' disabled' : ''}`} ref={ref}>
+      <div
+        className="scene-dropdown-trigger"
+        onClick={() => { if (!selectDisabled) setOpen(!open) }}
+      >
+        {selectedThumb && (
+          <img
+            src={selectedThumb}
+            alt=""
+            className="scene-dropdown-thumb scene-dropdown-thumb-clickable"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!isGalleryValue && onThumbClick) onThumbClick(value)
+            }}
+          />
+        )}
+        {!selectedThumb && value && <span className="scene-dropdown-empty-thumb" />}
+        <span className="scene-dropdown-label">{selectedLabel}</span>
+        <span className="scene-dropdown-arrow">{open ? '▴' : '▾'}</span>
+      </div>
+      {open && (
+        <div className="scene-dropdown-menu">
+          {/* None 옵션 */}
+          <div
+            className={`scene-dropdown-item${!value ? ' selected' : ''}`}
+            onClick={() => { onChange(''); setOpen(false) }}
+          >
+            <span className="scene-dropdown-empty-thumb" />
+            <span className="scene-dropdown-item-label">{placeholder || '—'}</span>
+          </div>
+
+          {/* 씬 옵션들 */}
+          {options.map(scene => {
+            const thumb = scene.image || null
+            return (
+              <div
+                key={scene.id}
+                className={`scene-dropdown-item${scene.id === value ? ' selected' : ''}`}
+                onClick={() => { onChange(scene.id); setOpen(false) }}
+              >
+                {thumb
+                  ? <img src={thumb} alt="" className="scene-dropdown-thumb" />
+                  : <span className="scene-dropdown-empty-thumb" />
+                }
+                <span className="scene-dropdown-item-label">{getLabel(scene)}</span>
+              </div>
+            )
+          })}
+
+          {/* 갤러리 섹션 */}
+          <div className="scene-dropdown-divider">📂 Gallery</div>
+
+          {galleryItems && galleryItems.length > 0 && galleryItems.map(item => (
+            <div
+              key={`gal_${item.mediaId}`}
+              className={`scene-dropdown-item gallery-item${value === GALLERY_PREFIX + item.mediaId ? ' selected' : ''}`}
+              onClick={() => { onChange(GALLERY_PREFIX + item.mediaId); setOpen(false) }}
+            >
+              <img src={item.url} alt="" className="scene-dropdown-thumb" />
+              <span className="scene-dropdown-item-label">{item.mediaId.substring(0, 20)}...</span>
+            </div>
+          ))}
+
+          {galleryLoading && (
+            <div className="scene-dropdown-item gallery-loading">
+              <span className="scene-dropdown-empty-thumb" />
+              <span className="scene-dropdown-item-label">⏳ Loading...</span>
+            </div>
+          )}
+
+          {!galleryItems?.length && !galleryLoading && onLoadGallery && (
+            <div
+              className="scene-dropdown-item gallery-load-btn"
+              onClick={(e) => { e.stopPropagation(); onLoadGallery() }}
+            >
+              <span className="scene-dropdown-empty-thumb" />
+              <span className="scene-dropdown-item-label">📂 Load Gallery</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const STATUS_ICONS = {
   waiting: '⏳',
@@ -25,7 +183,9 @@ const STATUS_ICONS = {
 
 let nextPairId = 1
 
-export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs, onUpdate, promptSource = 'image', onPromptSourceChange, onShowSceneDetail, disabled, t }) {
+export { GALLERY_PREFIX }
+
+export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs, onUpdate, promptSource = 'image', onPromptSourceChange, onShowSceneDetail, disabled, t, galleryItems, galleryLoading, onLoadGallery }) {
 
   // mediaId 있는 씬만 드롭다운에 표시
   const availableScenes = useMemo(
@@ -133,11 +293,6 @@ export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs
     onUpdate(framePairs.filter((_, i) => i !== index))
   }
 
-  const getSceneThumb = (sceneId) => {
-    const scene = scenes.find(s => s.id === sceneId)
-    return scene?.image || null
-  }
-
   const getSceneLabel = (scene) => {
     const idx = scenes.indexOf(scene) + 1
     return `#${idx} ${scene.prompt?.substring(0, 25) || scene.id}`
@@ -197,62 +352,40 @@ export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs
 
             {/* Start Image 드롭다운 */}
             <div className="mapping-col col-image">
-              <div className="scene-select-wrapper">
-                {pair.startSceneId && getSceneThumb(pair.startSceneId) && (
-                  <img
-                    src={getSceneThumb(pair.startSceneId)}
-                    alt=""
-                    className="scene-thumb scene-thumb-clickable"
-                    onClick={() => {
-                      const scene = scenes.find(s => s.id === pair.startSceneId)
-                      if (scene && onShowSceneDetail) onShowSceneDetail(scene)
-                    }}
-                    title={t('frameToVideo.clickToDetail')}
-                  />
-                )}
-                <select
-                  value={pair.startSceneId}
-                  onChange={(e) => updatePair(index, 'startSceneId', e.target.value)}
-                  disabled={disabled || pair.status === 'generating'}
-                >
-                  <option value="">—</option>
-                  {availableScenes.map(scene => (
-                    <option key={scene.id} value={scene.id}>
-                      {getSceneLabel(scene)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SceneSelect
+                value={pair.startSceneId}
+                onChange={(val) => updatePair(index, 'startSceneId', val)}
+                placeholder="—"
+                disabled={disabled || pair.status === 'generating'}
+                options={availableScenes}
+                getLabel={getSceneLabel}
+                onThumbClick={(sceneId) => {
+                  const scene = scenes.find(s => s.id === sceneId)
+                  if (scene && onShowSceneDetail) onShowSceneDetail(scene)
+                }}
+                galleryItems={galleryItems}
+                galleryLoading={galleryLoading}
+                onLoadGallery={onLoadGallery}
+              />
             </div>
 
             {/* End Image 드롭다운 */}
             <div className="mapping-col col-image">
-              <div className="scene-select-wrapper">
-                {pair.endSceneId && getSceneThumb(pair.endSceneId) && (
-                  <img
-                    src={getSceneThumb(pair.endSceneId)}
-                    alt=""
-                    className="scene-thumb scene-thumb-clickable"
-                    onClick={() => {
-                      const scene = scenes.find(s => s.id === pair.endSceneId)
-                      if (scene && onShowSceneDetail) onShowSceneDetail(scene)
-                    }}
-                    title={t('frameToVideo.clickToDetail')}
-                  />
-                )}
-                <select
-                  value={pair.endSceneId}
-                  onChange={(e) => updatePair(index, 'endSceneId', e.target.value)}
-                  disabled={disabled || pair.status === 'generating'}
-                >
-                  <option value="">{t('frameToVideo.noEndImage')}</option>
-                  {availableScenes.map(scene => (
-                    <option key={scene.id} value={scene.id}>
-                      {getSceneLabel(scene)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SceneSelect
+                value={pair.endSceneId}
+                onChange={(val) => updatePair(index, 'endSceneId', val)}
+                placeholder={t('frameToVideo.noEndImage')}
+                disabled={disabled || pair.status === 'generating'}
+                options={availableScenes}
+                getLabel={getSceneLabel}
+                onThumbClick={(sceneId) => {
+                  const scene = scenes.find(s => s.id === sceneId)
+                  if (scene && onShowSceneDetail) onShowSceneDetail(scene)
+                }}
+                galleryItems={galleryItems}
+                galleryLoading={galleryLoading}
+                onLoadGallery={onLoadGallery}
+              />
             </div>
 
             {/* 프롬프트 — 이미지/비디오/직접입력 모드 */}
@@ -288,7 +421,15 @@ export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs
 
             {/* 상태 */}
             <span className="mapping-col col-status">
-              {STATUS_ICONS[pair.status] || '⏳'} {t(`frameToVideo.${pair.status}`)}
+              {pair.status === 'generating' ? (
+                <span className="status generating">
+                  <StopwatchIcon size={16} /> <ElapsedTime startedAt={pair.generatingStartedAt} />
+                </span>
+              ) : (
+                <span className={`status ${pair.status || 'waiting'}`}>
+                  {STATUS_ICONS[pair.status] || '⏳'} {t(`frameToVideo.${pair.status}`)}
+                </span>
+              )}
             </span>
 
             {/* 삭제 */}

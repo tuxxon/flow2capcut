@@ -32,7 +32,7 @@ export default function SceneDetailModal({
       ...prev,
       image: scene.image,
       imagePath: scene.imagePath,
-      status: scene.status
+      status: scene.status,
     }))
     // 히스토리 재로드 트리거
     setShouldReloadHistory(n => n + 1)
@@ -134,8 +134,8 @@ export default function SceneDetailModal({
                 <span>{t('sceneDetail.generatingStatus')}</span>
               </div>
             ) : editData.image ? (
-              <img 
-                src={editData.image} 
+              <img
+                src={editData.image}
                 alt={`Scene ${scene.id}`}
                 onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
               />
@@ -146,7 +146,7 @@ export default function SceneDetailModal({
               </div>
             )}
           </div>
-          
+
           {/* 이미지 크기 */}
           {imageSize && (
             <div className="ref-detail-status">

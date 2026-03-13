@@ -61,6 +61,12 @@ export default function ResultsTable({
   onRetry,
   aspectRatio = '16:9',
   onShowDetail,
+  // ── 선택/편집 props ──
+  selectable = false,       // 체크박스 표시 여부
+  onToggle,                 // (id) => void — 개별 선택 토글
+  onToggleAll,              // () => void — 전체 선택 토글
+  onPromptEdit,             // (id, newPrompt) => void — 프롬프트 인라인 편집
+  disabled = false,         // 생성 중 편집 비활성화
 }) {
   const { t } = useI18n()
 
@@ -81,6 +87,8 @@ export default function ResultsTable({
   // done statuses: 'done' (image automation) or 'complete' (video automation) both count
   const doneCount = data.filter(s => s.status === 'done' || s.status === 'complete').length
   const errorCount = data.filter(s => s.status === 'error').length
+  const selectedCount = selectable ? data.filter(s => s.selected !== false).length : 0
+  const allSelected = selectable && data.length > 0 && data.every(s => s.selected !== false)
 
   const ratioClass = getRatioClass(aspectRatio)
 
@@ -200,6 +208,7 @@ export default function ResultsTable({
   return (
     <div className="results-table-container">
       <div className="results-summary">
+        {selectable && <span>☑ {selectedCount}/{data.length}</span>}
         <span>✅ {doneCount}</span>
         {errorCount > 0 && <span className="error-count">❌ {errorCount}</span>}
       </div>
@@ -207,6 +216,16 @@ export default function ResultsTable({
       <table className="results-table">
         <thead>
           <tr>
+            {selectable && (
+              <th className="col-check">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={onToggleAll}
+                  disabled={disabled}
+                />
+              </th>
+            )}
             <th className="col-id">#</th>
             <th className="col-img">{mediaHeader}</th>
             <th className="col-prompt">{t('results.prompt')}</th>
@@ -215,7 +234,17 @@ export default function ResultsTable({
         </thead>
         <tbody>
           {data.map((item, index) => (
-            <tr key={item.id} className={`status-${item.status}`}>
+            <tr key={item.id} className={`status-${item.status} ${selectable && item.selected === false ? 'deselected' : ''}`}>
+              {selectable && (
+                <td className="col-check">
+                  <input
+                    type="checkbox"
+                    checked={item.selected !== false}
+                    onChange={() => onToggle(item.id)}
+                    disabled={disabled}
+                  />
+                </td>
+              )}
               <td className="col-id">{index + 1}</td>
 
               <td className="col-img">
@@ -237,10 +266,19 @@ export default function ResultsTable({
               </td>
 
               <td className="col-prompt">
-                <div className="prompt-preview" title={item.prompt}>
-                  {(item.prompt || '').substring(0, 50)}
-                  {(item.prompt || '').length > 50 && '...'}
-                </div>
+                {onPromptEdit && !disabled ? (
+                  <input
+                    className="prompt-edit-input"
+                    value={item.prompt || ''}
+                    onChange={(e) => onPromptEdit(item.id, e.target.value)}
+                    disabled={disabled}
+                  />
+                ) : (
+                  <div className="prompt-preview" title={item.prompt}>
+                    {(item.prompt || '').substring(0, 50)}
+                    {(item.prompt || '').length > 50 && '...'}
+                  </div>
+                )}
               </td>
 
               <td className="col-status">

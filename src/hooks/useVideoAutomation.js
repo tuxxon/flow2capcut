@@ -1,18 +1,24 @@
 /**
- * useVideoAutomation — 비디오 생성 자동화 Hook
+ * useVideoAutomation — 비디오 생성 자동화 Hook (Async Pipeline)
  *
  * T2V (Text to Video), I2V (Image to Video) 모드 지원.
- * 비동기 비디오 생성 워크플로:
- *   1. 요청 → generationId 반환
- *   2. 10초 간격 폴링 (VIDEO_POLL_INTERVAL)
- *   3. 완료 시 mediaId → fetchMedia → base64/mp4 다운로드
- *   4. 파일 저장 (fileSystemAPI.saveVideo)
+ *
+ * 3-Phase Async Pipeline (AutoFlow 패턴):
+ *   Phase 1: 순차 제출 (7~15초 간격, 완료 안 기다림)
+ *   Phase 2: 일괄 폴링 (모든 generationId 배치 체크)
+ *   Phase 3: 완료된 것부터 순차 다운로드+저장
  */
 
 import { useState, useCallback, useRef } from 'react'
 import { TIMING } from '../config/defaults'
 import { fileSystemAPI } from './useFileSystem'
 import { toast } from '../components/Toast'
+
+// 유틸: 랜덤 대기
+const randomSleep = (min, max) =>
+  new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null) {
   const [isRunning, setIsRunning] = useState(false)
@@ -24,127 +30,43 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
   const stopRequestedRef = useRef(false)
   const pausedRef = useRef(false)
 
-  const { generateVideoT2V, generateVideoI2V, checkVideoStatus, fetchMedia, getAccessToken } = flowAPI
+  const { generateVideoT2V, generateVideoI2V, checkVideoStatus, upscaleVideo, fetchMedia, getAccessToken } = flowAPI
 
-  /**
-   * 비디오 상태 폴링 (완료될 때까지 대기)
-   * @param {string} generationId
-   * @returns {{ success, mediaId?, error? }}
-   */
-  const pollUntilDone = async (generationId) => {
-    const maxPolls = 60  // 최대 10분 (10초 × 60)
-
-    for (let i = 0; i < maxPolls; i++) {
-      if (stopRequestedRef.current) {
-        return { success: false, error: 'Stopped by user' }
-      }
-
-      // 일시정지 대기
-      while (pausedRef.current && !stopRequestedRef.current) {
-        await new Promise(r => setTimeout(r, 500))
-      }
-
-      const result = await checkVideoStatus([generationId])
-
-      if (!result.success) {
-        console.warn('[VideoAutomation] Poll error:', result.error)
-        // 네트워크 에러는 재시도
-        await new Promise(r => setTimeout(r, TIMING.VIDEO_POLL_INTERVAL))
-        continue
-      }
-
-      const statusInfo = result.statuses?.[0]
-      if (!statusInfo) {
-        await new Promise(r => setTimeout(r, TIMING.VIDEO_POLL_INTERVAL))
-        continue
-      }
-
-      if (statusInfo.status === 'complete' && statusInfo.mediaId) {
-        return { success: true, mediaId: statusInfo.mediaId, videoUrl: statusInfo.videoUrl }
-      }
-
-      if (statusInfo.status === 'failed') {
-        return { success: false, error: statusInfo.error || 'Video generation failed' }
-      }
-
-      // 진행 중 — 폴링 계속
-      if (statusInfo.progress) {
-        setStatusMessage(`🎬 ${t('videoAutomation.generating')} (${Math.round(statusInfo.progress * 100)}%)`)
-      }
-
-      await new Promise(r => setTimeout(r, TIMING.VIDEO_POLL_INTERVAL))
-    }
-
-    return { success: false, error: 'Polling timeout — video generation took too long' }
-  }
-
-  /**
-   * 단일 비디오 아이템 처리
-   */
-  const processVideoItem = async (item, mode, options) => {
-    const { projectName, saveMode, videoModel, aspectRatio, duration, videoResolution = '1080p', videoBatchCount = 1 } = options
-
-    if (stopRequestedRef.current) return
-
-    // 일시정지 대기
-    while (pausedRef.current && !stopRequestedRef.current) {
-      await new Promise(r => setTimeout(r, 500))
-    }
-
-    // 1. 비디오 생성 요청
-    let genResult
+  // ─── Phase 1 Helper: 비디오 제출 (DOM 조작) ───
+  const submitVideoItem = async (item, mode, options) => {
+    const { videoModel, aspectRatio, duration, videoBatchCount = 1 } = options
     const prompt = item.prompt || ''
 
     switch (mode) {
-      case 't2v': {
-        setStatusMessage(`🎬 ${t('videoAutomation.requesting')} — "${prompt.substring(0, 40)}..."`)
-        genResult = await generateVideoT2V(prompt, videoModel, aspectRatio, duration, videoBatchCount)
-        break
-      }
+      case 't2v':
+        return await generateVideoT2V(prompt, videoModel, aspectRatio, duration, videoBatchCount)
       case 'i2v': {
-        const startMediaId = item.startMediaId
-        if (!startMediaId) {
+        if (!item.startMediaId) {
           return { success: false, error: 'No start image mediaId' }
         }
-        const endMediaId = item.endMediaId || null
-        setStatusMessage(`🎞️ ${t('videoAutomation.requesting')} — Frame→Video`)
-        genResult = await generateVideoI2V(prompt, startMediaId, endMediaId, videoModel, aspectRatio, duration)
-        break
+        return await generateVideoI2V(prompt, item.startMediaId, item.endMediaId || null, videoModel, aspectRatio, duration)
       }
       default:
         return { success: false, error: `Unknown mode: ${mode}` }
     }
+  }
 
-    if (!genResult.success) {
-      // 401 인증 에러 감지 → authReady 리셋
-      if (genResult.error && (genResult.error.includes('401') || genResult.error.includes('auth'))) {
-        onAuthError?.()
-      }
-      return { success: false, error: genResult.error }
-    }
-
-    // 2. 폴링
-    const generationId = genResult.generationId
-    setStatusMessage(`⏳ ${t('videoAutomation.polling')} (${generationId.substring(0, 12)}...)`)
-
-    const pollResult = await pollUntilDone(generationId)
-
-    if (!pollResult.success) {
-      return { success: false, error: pollResult.error }
-    }
-
-    // 3. 미디어 다운로드 — DOM 기반 다운로드 (AutoFlow 방식) 최우선
-    //    hover → three-dot → download → 해상도 선택 → Electron will-download 캡처
-    setStatusMessage(`📥 ${t('videoAutomation.downloading')}`)
+  // ─── Phase 3 Helper: 다운로드 + 저장 ───
+  // DOM 다운로드 우선 (Flow UI가 upscale/reCAPTCHA 자체 처리)
+  // 다운로드 우선순위: DOM (upscale 포함) → videoUrl 직접 → fetchMedia
+  const downloadAndSaveVideo = async (mediaId, videoUrl, item, options, setStatusMsg) => {
+    const { projectName, saveMode, videoResolution = '1080p' } = options
     let mediaResult
 
-    // 방법 1: DOM 기반 다운로드 (설정 해상도 사용)
+    // ─── 다운로드 ───
+    // 방법 1: DOM 다운로드 (Flow UI의 hover→3dot→download→해상도 선택)
+    // Flow 페이지가 reCAPTCHA 및 upscale을 자체 처리하므로 가장 안정적
     if (window.electronAPI?.domDownloadVideo) {
       try {
-        console.log('[VideoAutomation] Trying DOM download for mediaId:', pollResult.mediaId?.substring(0, 20), 'resolution:', videoResolution)
+        console.log('[VideoAutomation] [1/3] DOM download — mediaId:', mediaId?.substring(0, 20), 'resolution:', videoResolution)
+        setStatusMsg?.(`⬇️ Downloading ${videoResolution} — ${mediaId?.substring(0, 16)}...`)
         mediaResult = await window.electronAPI.domDownloadVideo({
-          mediaId: pollResult.mediaId,
-          resolution: videoResolution
+          mediaId, resolution: videoResolution
         })
         if (mediaResult?.success) {
           console.log('[VideoAutomation] ✅ DOM download success')
@@ -153,37 +75,47 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
         }
       } catch (e) {
         console.warn('[VideoAutomation] DOM download exception:', e.message)
+      }
+    }
+
+    // 방법 2: videoUrl 직접 다운로드 (DOM에서 비디오 안 보일 때 — 원본 해상도)
+    if (!mediaResult?.success && videoUrl) {
+      try {
+        console.log('[VideoAutomation] [2/3] Direct URL download:', videoUrl?.substring(0, 80))
+        const token = await getAccessToken()
+        mediaResult = await window.electronAPI.downloadVideoUrl({ url: videoUrl, token })
+        if (mediaResult?.success) {
+          console.log('[VideoAutomation] ✅ Direct URL download success')
+        } else {
+          console.warn('[VideoAutomation] Direct URL download failed:', mediaResult?.error)
+        }
+      } catch (e) {
+        console.warn('[VideoAutomation] Direct URL download exception:', e.message)
         mediaResult = null
       }
     }
 
-    // 방법 2: status 응답에서 추출한 videoUrl로 직접 다운로드 (폴백 1)
-    if (!mediaResult?.success && pollResult.videoUrl) {
-      try {
-        console.log('[VideoAutomation] Trying direct URL download:', pollResult.videoUrl?.substring(0, 60))
-        const token = await getAccessToken()
-        mediaResult = await window.electronAPI.downloadVideoUrl({
-          url: pollResult.videoUrl, token
-        })
-      } catch (e) {
-        mediaResult = { success: false, error: e.message }
-      }
-    }
-
-    // 방법 3: fetchMedia (이미지용 getMediaUrlRedirect — 비디오에선 잘 안됨, 최후 폴백)
+    // 방법 3: fetchMedia (getMediaUrlRedirect — 원본 해상도)
     if (!mediaResult?.success) {
-      console.log('[VideoAutomation] Trying fetchMedia fallback for mediaId:', pollResult.mediaId?.substring(0, 20))
-      mediaResult = await fetchMedia(pollResult.mediaId)
+      try {
+        console.log('[VideoAutomation] [3/3] fetchMedia for mediaId:', mediaId?.substring(0, 20))
+        mediaResult = await fetchMedia(mediaId)
+        if (mediaResult?.success) {
+          console.log('[VideoAutomation] ✅ fetchMedia success')
+        }
+      } catch (e) {
+        console.warn('[VideoAutomation] fetchMedia exception:', e.message)
+      }
     }
 
     if (!mediaResult?.success) {
       return { success: false, error: `Media download failed: ${mediaResult?.error || 'All methods failed'}` }
     }
 
-    // 4. 파일 저장
+    // 파일 저장 — videoSaveId 우선 (t2v_N / i2v_N), 없으면 기존 item.id (vscene_N / fp_N)
     let videoPath = null
     if (saveMode === 'folder' && projectName) {
-      const videoId = item.id || `video_${Date.now()}`
+      const videoId = item.videoSaveId || item.id || `video_${Date.now()}`
       const saveResult = await fileSystemAPI.saveVideo(projectName, videoId, mediaResult.base64, 'flow')
       videoPath = saveResult?.path || null
     }
@@ -191,15 +123,21 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
     return {
       success: true,
       base64: mediaResult.base64,
-      mediaId: pollResult.mediaId,
-      generationId,
-      videoPath
+      mediaId,
+      videoPath,
+      videoSaveId: item.videoSaveId || null,
+    }
+  }
+
+  // 일시정지 대기 헬퍼
+  const waitIfPaused = async () => {
+    while (pausedRef.current && !stopRequestedRef.current) {
+      await sleep(500)
     }
   }
 
   /**
-   * 비디오 자동화 시작
-   * @param {{ mode, scenes?, framePairs?, projectName, saveMode, videoModel, aspectRatio, duration }} options
+   * 비디오 자동화 시작 — 3-Phase Async Pipeline
    */
   const start = useCallback(async (options = {}) => {
     const {
@@ -233,25 +171,28 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
 
     // 처리할 아이템 목록 구성
     let items = []
-
     switch (mode) {
       case 't2v':
         items = scenes
           .filter(s => s.prompt)
-          .map(s => ({ id: s.id, prompt: s.prompt }))
+          .map(s => ({
+            id: s.id,
+            prompt: s.prompt,
+            videoSaveId: `t2v_${s.id.replace('vscene_', '')}`,
+          }))
         break
-
       case 'i2v':
         items = framePairs
           .filter(p => p.startSceneId && p.status !== 'complete')
           .map(p => ({
             id: p.id,
             prompt: p.prompt,
-            startMediaId: p._startMediaId,  // App.jsx에서 resolve해서 넘겨줌
+            startMediaId: p._startMediaId,
             endMediaId: p._endMediaId || null,
+            startSceneId: p.startSceneId,
+            videoSaveId: `i2v_${p.id.replace('fp_', '')}`,
           }))
         break
-
     }
 
     const total = items.length
@@ -264,33 +205,143 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
 
     setProgress({ current: 0, total, percent: 0 })
 
-    // 순차 처리 (비디오는 서버 부하 고려)
+    // ═══════════════════════════════════════════
+    // Phase 1: 순차 제출 (7~15초 간격, 완료 안 기다림)
+    // ═══════════════════════════════════════════
+    const submissions = [] // { itemId, generationId }
+    let completedCount = 0
+
     for (let i = 0; i < items.length; i++) {
       if (stopRequestedRef.current) break
+      await waitIfPaused()
 
       const item = items[i]
+      setStatusMessage(`📤 ${t('videoAutomation.submitting') || 'Submitting'} ${i + 1}/${total} — "${(item.prompt || '').substring(0, 30)}..."`)
       onItemUpdate?.(item.id, 'generating')
 
-      const result = await processVideoItem(item, mode, {
-        projectName, saveMode, videoModel, aspectRatio, duration, videoResolution, videoBatchCount
+      const genResult = await submitVideoItem(item, mode, {
+        videoModel, aspectRatio, duration, videoBatchCount
       })
 
-      if (result.success) {
-        onItemUpdate?.(item.id, 'complete', result)
+      if (genResult.success && genResult.generationId) {
+        submissions.push({ itemId: item.id, generationId: genResult.generationId })
+        console.log(`[VideoAutomation] ✅ Submitted ${i + 1}/${total}: ${genResult.generationId.substring(0, 16)}...`)
       } else {
-        onItemUpdate?.(item.id, 'error', { error: result.error })
+        // 401 인증 에러 감지
+        if (genResult.error && (genResult.error.includes('401') || genResult.error.includes('auth'))) {
+          onAuthError?.()
+        }
+        onItemUpdate?.(item.id, 'error', { error: genResult.error })
+        console.warn(`[VideoAutomation] ❌ Submit failed ${i + 1}/${total}:`, genResult.error)
       }
 
-      setProgress({
-        current: i + 1,
-        total,
-        percent: Math.round(((i + 1) / total) * 100)
-      })
+      // 다음 제출 전 랜덤 대기 (마지막 아이템 제외)
+      if (i < items.length - 1 && !stopRequestedRef.current) {
+        const waitMs = Math.floor(Math.random() * (TIMING.VIDEO_SUBMIT_MAX_DELAY - TIMING.VIDEO_SUBMIT_MIN_DELAY + 1)) + TIMING.VIDEO_SUBMIT_MIN_DELAY
+        setStatusMessage(`⏱️ ${t('videoAutomation.waitingNext') || 'Waiting'} ${Math.round(waitMs / 1000)}s...`)
+        await sleep(waitMs)
+      }
     }
 
+    if (submissions.length === 0) {
+      // 모든 제출 실패
+      setIsRunning(false)
+      setStatus('done')
+      setStatusMessage(`❌ ${t('videoAutomation.allFailed') || 'All submissions failed'}`)
+      return
+    }
+
+    console.log(`[VideoAutomation] Phase 1 done: ${submissions.length}/${total} submitted`)
+
+    // ═══════════════════════════════════════════
+    // Phase 2: 일괄 폴링 + Phase 3: 완료 즉시 다운로드
+    // ═══════════════════════════════════════════
+    const pending = new Map(submissions.map(s => [s.itemId, s]))
+    let pollCount = 0
+    const maxPolls = TIMING.VIDEO_MAX_POLL_COUNT
+
+    while (pending.size > 0 && pollCount < maxPolls) {
+      if (stopRequestedRef.current) break
+      await waitIfPaused()
+
+      // 진행률 표시
+      const doneCount = submissions.length - pending.size
+      setStatusMessage(`⏳ ${t('videoAutomation.polling') || 'Polling'} ${submissions.length} videos (${doneCount + completedCount} ${t('videoAutomation.complete') || 'complete'})`)
+      setProgress({
+        current: doneCount + completedCount,
+        total,
+        percent: Math.round(((doneCount + completedCount) / total) * 100)
+      })
+
+      // 배치 상태 체크 — genIds 순서와 statuses 순서가 동일 (인덱스 매칭)
+      const pendingEntries = Array.from(pending.entries()) // [[itemId, { generationId }], ...]
+      const genIds = pendingEntries.map(([_, s]) => s.generationId)
+      const result = await checkVideoStatus(genIds)
+
+      if (result.success && result.statuses) {
+        // statuses 배열은 genIds 순서와 동일 → 인덱스로 매칭
+        for (let si = 0; si < result.statuses.length; si++) {
+          const statusInfo = result.statuses[si]
+          if (si >= pendingEntries.length) break
+          const [itemId, submission] = pendingEntries[si]
+
+          if (statusInfo.status === 'complete' && statusInfo.mediaId) {
+            // ─── Phase 3: 다운로드+저장 (DOM 순차) ───
+            console.log(`[VideoAutomation] ✅ Complete: ${statusInfo.mediaId.substring(0, 20)} → downloading...`)
+            setStatusMessage(`📥 ${t('videoAutomation.downloading') || 'Downloading'} — ${statusInfo.mediaId.substring(0, 16)}...`)
+
+            const dlResult = await downloadAndSaveVideo(
+              statusInfo.mediaId,
+              statusInfo.videoUrl,
+              items.find(i => i.id === itemId),
+              { projectName, saveMode, videoResolution, aspectRatio },
+              setStatusMessage
+            )
+
+            if (dlResult.success && dlResult.base64) {
+              onItemUpdate?.(itemId, 'complete', {
+                ...dlResult,
+                generationId: submission.generationId
+              })
+              completedCount++
+              console.log(`[VideoAutomation] ✅ Downloaded & saved: ${itemId}`)
+            } else {
+              const errMsg = !dlResult.success
+                ? (dlResult.error || 'Download failed')
+                : 'Download succeeded but no video data returned'
+              onItemUpdate?.(itemId, 'error', { error: errMsg })
+              console.warn(`[VideoAutomation] ❌ Download failed: ${itemId}`, errMsg)
+            }
+            pending.delete(itemId)
+
+          } else if (statusInfo.status === 'failed') {
+            onItemUpdate?.(itemId, 'error', { error: statusInfo.error || 'Video generation failed' })
+            pending.delete(itemId)
+            console.warn(`[VideoAutomation] ❌ Generation failed: ${submission.generationId.substring(0, 16)}`)
+          }
+          // else: 'pending' / 'processing' → 계속 폴링
+        }
+      }
+
+      pollCount++
+      if (pending.size > 0) {
+        await sleep(TIMING.VIDEO_POLL_INTERVAL)
+      }
+    }
+
+    // 타임아웃된 항목 처리
+    if (pending.size > 0 && !stopRequestedRef.current) {
+      for (const [itemId] of pending) {
+        onItemUpdate?.(itemId, 'error', { error: 'Polling timeout — video generation took too long' })
+      }
+    }
+
+    // ═══════════════════════════════════════════
     // 완료
+    // ═══════════════════════════════════════════
     setIsRunning(false)
     setIsPaused(false)
+    setProgress({ current: total, total, percent: 100 })
 
     if (stopRequestedRef.current) {
       setStatus('stopped')
@@ -299,7 +350,7 @@ export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null
       setStatus('done')
       setStatusMessage(`✅ ${t('videoAutomation.done')}`)
     }
-  }, [isRunning, generateVideoT2V, generateVideoI2V, checkVideoStatus, fetchMedia, getAccessToken, t])
+  }, [isRunning, generateVideoT2V, generateVideoI2V, checkVideoStatus, upscaleVideo, fetchMedia, getAccessToken, t])
 
   /**
    * 일시정지/재개

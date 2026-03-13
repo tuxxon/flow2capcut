@@ -38,8 +38,8 @@ export const DEFAULTS = {
       generateVideoI2V: '/video:batchAsyncGenerateVideoStartImage',
       // 비디오 상태 확인
       checkVideoStatus: '/video:batchCheckAsyncVideoGenerationStatus',
-      // 비디오 업스케일
-      upsampleVideo: '/video:batchAsyncGenerateVideoUpsample',
+      // 비디오 업스케일 (AutoFlow 10.7.58 역공학)
+      upsampleVideo: '/video:batchAsyncGenerateVideoUpsampleVideo',
       // 미디어 URL 리다이렉트
       mediaRedirect: 'https://labs.google/fx/api/trpc/media.getMediaUrlRedirect',
       // 세션 (access token 추출)
@@ -62,6 +62,11 @@ export const DEFAULTS = {
       { value: 'veo_3_1_t2v_fast_ultra_relaxed', label: 'Veo 3.1 Fast' },
       { value: 'veo_3_1_t2v_quality_ultra_relaxed', label: 'Veo 3.1 Quality' },
     ],
+    // 비디오 업스케일 모델 (AutoFlow 10.7.58 역공학)
+    upscaleModels: {
+      '1080p': { modelKey: 'veo_3_1_upsampler_1080p', resolution: 'VIDEO_RESOLUTION_1080P' },
+      '4k':    { modelKey: 'veo_3_1_upsampler_4k',    resolution: 'VIDEO_RESOLUTION_4K' },
+    },
   },
 
   // DOM 셀렉터 (DOM 방식용) - Flow 페이지용 (AutoFlow 10.7.58 검증)
@@ -115,7 +120,12 @@ export const TIMING = {
   TOAST_EXIT_ANIMATION: 300,
   SETTINGS_HIGHLIGHT: 3000,
   AUTH_ERROR_TOAST: 6000,
-  VIDEO_POLL_INTERVAL: 10000, // 비디오 상태 폴링 간격
+  VIDEO_POLL_INTERVAL: 10000,      // 비디오 상태 폴링 간격
+  VIDEO_SUBMIT_MIN_DELAY: 7000,    // 제출 간 최소 대기 (ms)
+  VIDEO_SUBMIT_MAX_DELAY: 15000,   // 제출 간 최대 대기 (ms)
+  VIDEO_MAX_POLL_COUNT: 120,       // 최대 폴링 횟수 (120 × 10초 = 20분)
+  UPSCALE_POLL_INTERVAL: 2000,     // 업스케일 폴링 간격 (ms)
+  UPSCALE_MAX_POLL_COUNT: 90,      // 업스케일 최대 폴링 (90 × 2초 = 3분)
 }
 
 export default DEFAULTS
