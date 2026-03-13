@@ -30,7 +30,7 @@ export default {
   
   // Tabs
   tabs: {
-    text: 'Prompts',
+    text: 'Image',
     videoText: 'Video',
     frameToVideo: 'F→V',
     refToVideo: 'R→V',

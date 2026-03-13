@@ -30,7 +30,7 @@ export default {
   
   // 탭
   tabs: {
-    text: '프롬프트',
+    text: '이미지',
     videoText: '비디오',
     frameToVideo: 'F→V',
     refToVideo: 'R→V',
