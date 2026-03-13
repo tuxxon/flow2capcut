@@ -109,43 +109,32 @@ async function prepareCloudRequest(project, options = {}) {
   } = options;
 
   const scenes = project.scenes || [];
-  const videos = project.videos || [];
   const format = project.format || 'landscape';
 
-  // 비디오가 커버하는 씬 매핑
-  const videoMap = {};
-  videos.forEach(video => {
-    if (video.video_path && video.from_scene) {
-      videoMap[video.from_scene] = video;
-    }
-  });
-
-  // 씬 메타데이터 준비
+  // 씬 메타데이터 준비 — media_type/media_path (resolveExportMedia 결과) 우선 사용
   const cloudScenes = [];
   const mediaFiles = []; // 로컬에서 처리할 미디어 파일 정보
 
   for (let index = 0; index < scenes.length; index++) {
     const scene = scenes[index];
     const sceneId = scene.id || `scene_${index + 1}`;
-    const video = videoMap[sceneId];
     let imageSize = scene.upscaled_size || scene.image_size;
 
-    let filename, type, duration, width, height, path, fallback;
+    // resolveExportMedia()가 결정한 media_type/media_path 사용
+    const type = scene.media_type || 'image';
+    const duration = scene.image_duration || 3;
+    const path = scene.media_path || scene.image_path;
+    const fallback = scene.image_fallback;
 
-    if (video) {
-      type = 'video';
-      path = video.video_path;
-      duration = video.duration || 5;
-      filename = getFilename(path, sceneId, 'video');
+    if (!path && !fallback) continue; // 미디어 없음 → 스킵
+
+    const filename = getFilename(path, sceneId, type);
+
+    let width, height;
+    if (type === 'video') {
       width = imageSize?.width || 1920;
       height = imageSize?.height || 1080;
-    } else if (scene.image_path) {
-      type = 'image';
-      path = scene.image_path;
-      fallback = scene.image_fallback;
-      duration = scene.image_duration || 3;
-      filename = getFilename(path, sceneId, 'image');
-
+    } else {
       // image_size가 없으면 base64에서 추출 시도
       if (!imageSize && fallback) {
         console.log(`[CapCut Cloud] Extracting image size for ${sceneId} from base64...`);
@@ -154,11 +143,8 @@ async function prepareCloudRequest(project, options = {}) {
           console.log(`[CapCut Cloud] Extracted size: ${imageSize.width}x${imageSize.height}`);
         }
       }
-
       width = imageSize?.width || 1024;
       height = imageSize?.height || 1024;
-    } else {
-      continue; // 스킵
     }
 
     cloudScenes.push({
