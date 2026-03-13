@@ -25,7 +25,6 @@ import WelcomeScreen from './components/WelcomeScreen'
 import PromptInput from './components/PromptInput'
 import SceneList from './components/SceneList'
 import FrameToVideoPanel from './components/FrameToVideoPanel'
-import RefToVideoPanel from './components/RefToVideoPanel'
 import ReferencePanel from './components/ReferencePanel'
 import SettingsModal from './components/SettingsModal'
 import ImportModal from './components/ImportModal'
@@ -58,7 +57,10 @@ function App() {
       projectName: DEFAULTS.project.defaultName,
       saveMode: 'folder',      // 'folder' | 'none'
       concurrency: DEFAULTS.generation.concurrency,
-      exportThreshold: UI.EXPORT_THRESHOLD      // 내보내기 버튼 표시 완료율 (%)
+      exportThreshold: UI.EXPORT_THRESHOLD,     // 내보내기 버튼 표시 완료율 (%)
+      imageBatchCount: 1,     // 이미지 배치 카운트 (x1~x4)
+      videoBatchCount: 1,     // 비디오 배치 카운트 (x1~x4)
+      videoResolution: '1080p' // 비디오 다운로드 해상도
     }
     if (saved) {
       const parsed = JSON.parse(saved)
@@ -88,9 +90,9 @@ function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // UI State
-  const [activeTab, setActiveTab] = useState('text') // 'text' | 'video-text' | 'frame-to-video' | 'ref-to-video' | 'list'
+  const [activeTab, setActiveTab] = useState('text') // 'text' | 'video-text' | 'frame-to-video' | 'list'
   const [framePairs, setFramePairs] = useState([])   // Frame to Video 매핑
-  const [refPairs, setRefPairs] = useState([])         // Refs to Video 매핑
+  const [ftvPromptSource, setFtvPromptSource] = useState('image') // 'image' | 'video' | 'none'
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState(null) // 설정 모달 초기 탭
   const [showImport, setShowImport] = useState(false)
@@ -121,11 +123,16 @@ function App() {
     t,
     () => {
       setAuthReady(false)
+      flowAPI.clearTokenCache()  // 캐시된 만료 토큰 제거
       toast.error(t('status.authErrorStopped'), TIMING.AUTH_ERROR_TOAST)
     }
   )
 
-  const videoAutomation = useVideoAutomation(flowAPI, t)
+  const videoAutomation = useVideoAutomation(flowAPI, t, () => {
+    setAuthReady(false)
+    flowAPI.clearTokenCache()  // 캐시된 만료 토큰 제거 → 재로그인 후 새 토큰 획득
+    toast.error(t('status.authErrorStopped'))
+  })
   const videoScenesHook = useVideoScenes()
   const { videoScenes, setVideoScenes } = videoScenesHook
 
@@ -137,7 +144,6 @@ function App() {
     settings, setSettings, scenes, references, setScenes, setReferences,
     videoScenes, setVideoScenes,
     framePairs, setFramePairs,
-    refPairs, setRefPairs,
     openSettings
   })
 
@@ -153,7 +159,7 @@ function App() {
 
   // Export
   const { showExportModal, setShowExportModal, exporting, exportPhase, handleExportClick, handleExportConfirm } = useExport({
-    settings, scenes, videoScenes, framePairs, refPairs, openSettings,
+    settings, scenes, videoScenes, framePairs, openSettings,
     isAuthenticated,
     subscription,
     onLoginRequired: () => setShowAuthModal(true),
@@ -163,7 +169,7 @@ function App() {
     }
   })
 
-  // Auto-save project data when scenes/references/videoScenes/framePairs/refPairs change (생성 중 또는 복원 중 아닐 때만)
+  // Auto-save project data when scenes/references/videoScenes/framePairs change (생성 중 또는 복원 중 아닐 때만)
   useEffect(() => {
     if (generatingRefs.length > 0 || isRunning) return
     if (isRestoringRef?.current) return  // ← 복원 중에는 auto-save 스킵 (project.json 오염 방지)
@@ -176,7 +182,7 @@ function App() {
       }, TIMING.AUTO_SAVE_DEBOUNCE)
       return () => clearTimeout(timer)
     }
-  }, [scenes, references, videoScenes, framePairs, refPairs, settings.projectName, settings.saveMode, generatingRefs.length, isRunning])
+  }, [scenes, references, videoScenes, framePairs, settings.projectName, settings.saveMode, generatingRefs.length, isRunning])
 
   // Save settings
   useEffect(() => {
@@ -314,6 +320,7 @@ function App() {
           projectName,
           saveMode: settings.saveMode,
           concurrency: settings.concurrency || 2,
+          imageBatchCount: settings.imageBatchCount || 1,
         })
         break
       }
@@ -330,6 +337,8 @@ function App() {
           scenes: selectedVideoScenes,
           projectName,
           saveMode: settings.saveMode,
+          videoResolution: settings.videoResolution || '1080p',
+          videoBatchCount: settings.videoBatchCount || 1,
           onItemUpdate: (id, newStatus, result) => {
             videoScenesHook.updateVideoScene(id, {
               status: newStatus,
@@ -354,8 +363,19 @@ function App() {
         const resolvedPairs = selectedFramePairs.map(p => {
           const startScene = scenes.find(s => s.id === p.startSceneId)
           const endScene = scenes.find(s => s.id === p.endSceneId)
+
+          // promptSource에 따라 effective prompt 계산
+          const originalIdx = framePairs.indexOf(p)
+          let effectivePrompt = p.prompt // default: image prompt
+          if (ftvPromptSource === 'video') {
+            effectivePrompt = p.videoPrompt || videoScenes[originalIdx]?.prompt || p.prompt
+          } else if (ftvPromptSource === 'none') {
+            effectivePrompt = p.customPrompt || ''
+          }
+
           return {
             ...p,
+            prompt: effectivePrompt,
             _startMediaId: startScene?.mediaId || null,
             _endMediaId: endScene?.mediaId || null,
           }
@@ -365,12 +385,18 @@ function App() {
           framePairs: resolvedPairs,
           projectName,
           saveMode: settings.saveMode,
+          videoResolution: settings.videoResolution || '1080p',
+          videoBatchCount: settings.videoBatchCount || 1,
           onItemUpdate: (id, newStatus, result) => {
             setFramePairs(prev => prev.map(p =>
               p.id === id ? {
                 ...p, status: newStatus,
                 ...(newStatus === 'generating' ? { generatingStartedAt: Date.now() } : {}),
-                ...(result || {}),
+                ...(result?.base64 ? { video: result.base64 } : {}),
+                ...(result?.mediaId ? { mediaId: result.mediaId } : {}),
+                ...(result?.generationId ? { generationId: result.generationId } : {}),
+                ...(result?.videoPath ? { videoPath: result.videoPath } : {}),
+                ...(result?.error ? { error: result.error } : {}),
               } : p
             ))
           },
@@ -378,37 +404,6 @@ function App() {
         break
       }
 
-      case 'ref-to-video': {
-        // Refs to Video — 선택된 refPairs만 실행
-        const selectedRefPairs = refPairs.filter(p => p.selected !== false)
-        if (selectedRefPairs.length === 0) {
-          toast.warning(t('videoSelection.noneSelected'))
-          return
-        }
-        const resolvedRefPairs = selectedRefPairs.map(p => ({
-          ...p,
-          _refMediaIds: (p.refIds || []).map(refId => {
-            const ref = references.find(r => r.id === refId || r.name === refId)
-            return ref?.mediaId || null
-          }).filter(Boolean),
-        }))
-        videoAutomation.start({
-          mode: 'r2v',
-          refPairs: resolvedRefPairs,
-          projectName,
-          saveMode: settings.saveMode,
-          onItemUpdate: (id, newStatus, result) => {
-            setRefPairs(prev => prev.map(p =>
-              p.id === id ? {
-                ...p, status: newStatus,
-                ...(newStatus === 'generating' ? { generatingStartedAt: Date.now() } : {}),
-                ...(result || {}),
-              } : p
-            ))
-          },
-        })
-        break
-      }
 
       default:
         break
@@ -494,13 +489,6 @@ function App() {
             >
               🎞️ <span className="tab-label">{t('tabs.frameToVideo')}</span>
             </button>
-            <button
-              className={`tab tab-icon ${activeTab === 'ref-to-video' ? 'active' : ''}`}
-              onClick={() => setActiveTab('ref-to-video')}
-              title={t('tabs.refToVideo')}
-            >
-              🔗 <span className="tab-label">{t('tabs.refToVideo')}</span>
-            </button>
           </div>
 
           {/* 오른쪽 그룹: 관리 탭 (씬목록, Ref, 가져오기) */}
@@ -576,17 +564,12 @@ function App() {
           {activeTab === 'frame-to-video' && (
             <FrameToVideoPanel
               scenes={scenes}
+              videoScenes={videoScenes}
               framePairs={framePairs}
               onUpdate={setFramePairs}
-              disabled={anyRunning}
-              t={t}
-            />
-          )}
-          {activeTab === 'ref-to-video' && (
-            <RefToVideoPanel
-              references={references}
-              refPairs={refPairs}
-              onUpdate={setRefPairs}
+              promptSource={ftvPromptSource}
+              onPromptSourceChange={setFtvPromptSource}
+              onShowSceneDetail={(scene) => setSelectedScene(scene)}
               disabled={anyRunning}
               t={t}
             />
@@ -645,7 +628,6 @@ function App() {
                     (activeTab === 'text' && scenes.length === 0) ||
                     (activeTab === 'video-text' && videoScenes.length === 0) ||
                     (activeTab === 'frame-to-video' && framePairs.length === 0) ||
-                    (activeTab === 'ref-to-video' && refPairs.length === 0) ||
                     (activeTab === 'list')
                   }
                 >
@@ -713,9 +695,6 @@ function App() {
         )}
         {activeTab === 'frame-to-video' && (
           <ResultsTable items={framePairs} mediaType="frame-pair" onShowDetail={(item) => setSelectedVideo(item)} />
-        )}
-        {activeTab === 'ref-to-video' && (
-          <ResultsTable items={refPairs} mediaType="ref-pair" onShowDetail={(item) => setSelectedVideo(item)} />
         )}
         {activeTab === 'list' && (
           <ResultsTable

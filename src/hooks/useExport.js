@@ -19,7 +19,6 @@ export function useExport({
   scenes,
   videoScenes = [],
   framePairs = [],
-  refPairs = [],
   openSettings,
   isAuthenticated,
   subscription,
@@ -111,15 +110,6 @@ export function useExport({
               to_scene: p.endSceneId || null,
               prompt: p.prompt || '',
               source: 'i2v',
-            })),
-          // R→V 비디오 (refPairs)
-          ...refPairs
-            .filter(p => p.status === 'complete' && p.base64)
-            .map(p => ({
-              id: p.id,
-              video_path: p.base64,
-              prompt: p.prompt || '',
-              source: 'r2v',
             })),
         ]
       }

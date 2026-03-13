@@ -25,20 +25,27 @@ export default function Header({
   disabled = false  // 생성 중일 때 프로젝트 전환 비활성화
 }) {
   const { t, lang, changeLang, languages } = useI18n()
-  const [authStatus, setAuthStatus] = useState('checking') // 'checking' | 'authenticated' | 'unauthenticated'
+  const [authStatus, setAuthStatus] = useState('checking') // 'checking' | 'authenticated' | 'unauthenticated' | 'waiting'
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
   const [showDrawer, setShowDrawer] = useState(false)
   const [projects, setProjects] = useState([])
   const dropdownRef = useRef(null)
+  const pollingRef = useRef(null)
   
   // authReady가 바뀌면 상태 동기화
   useEffect(() => {
     if (authReady) {
       setAuthStatus('authenticated')
+      stopPolling()
     } else {
       setAuthStatus('unauthenticated')
     }
   }, [authReady])
+
+  // 컴포넌트 언마운트 시 폴링 정리
+  useEffect(() => {
+    return () => stopPolling()
+  }, [])
   
   // authReady prop에만 의존 — 독립적인 checkAuth 제거
   // (기존: !authReady일 때 quickCheck → 캐시된 만료 토큰을 유효로 오판하는 경합 조건 발생)
@@ -101,13 +108,30 @@ export default function Header({
     }
   }
   
-  // Flow 사이트 열기
+  // 폴링 정리
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+  }
+
+  // Flow 사이트 열기 + 로그인 대기 폴링
   const openFlow = () => {
     if (window.electronAPI?.switchTab) {
       window.electronAPI.switchTab('flow')
     }
-    // 잠시 후 토큰 다시 확인 (빠른 모드)
-    setTimeout(() => checkAuth(true), TIMING.AUTH_CHECK_DELAY)
+    setAuthStatus('waiting')
+    stopPolling()
+    pollingRef.current = setInterval(async () => {
+      try {
+        const token = await getAccessToken(true)
+        if (token) {
+          setAuthStatus('authenticated')
+          stopPolling()
+        }
+      } catch {}
+    }, TIMING.AUTH_POLL_INTERVAL || 2000)
   }
   
   const handleProjectSelect = (name) => {
@@ -181,6 +205,11 @@ export default function Header({
           )}
           {authStatus === 'authenticated' && (
             <span className="auth-badge authenticated" data-tooltip={t('header.authenticated')} onClick={checkAuth}>🟢</span>
+          )}
+          {authStatus === 'waiting' && (
+            <span className="auth-badge waiting" data-tooltip={t('header.waitingLogin')}>
+              ⏳ {t('header.waitingLogin')}
+            </span>
           )}
           {authStatus === 'unauthenticated' && (
             <button className="auth-btn" onClick={openFlow} data-tooltip={t('header.login')}>

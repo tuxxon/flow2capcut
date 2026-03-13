@@ -37,7 +37,7 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     setGeneratingRefs(prev => [...prev, index])
 
     try {
-      const result = await flowAPI.generateImageDOM(ref.prompt)
+      const result = await flowAPI.generateImageDOM(ref.prompt, [], { batchCount: settings.imageBatchCount })
 
       if (result.success && result.images?.length > 0) {
         // images는 [{ base64, mediaId }] 객체 배열

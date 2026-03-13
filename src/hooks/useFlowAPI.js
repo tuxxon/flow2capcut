@@ -87,8 +87,8 @@ export function useFlowAPI() {
    * @param {Array} referenceImages - 레퍼런스 이미지 배열 [{ mediaId, caption, category }]
    *   CDP Fetch 인터셉션으로 batchGenerateImages 요청에 자동 주입
    */
-  const generateImageDOM = useCallback(async (prompt, referenceImages = []) => {
-    return generateImageDOMImpl(prompt, referenceImages)
+  const generateImageDOM = useCallback(async (prompt, referenceImages = [], options = {}) => {
+    return generateImageDOMImpl(prompt, referenceImages, options)
   }, [])
 
   /**
@@ -133,13 +133,13 @@ export function useFlowAPI() {
    * Text to Video 생성 요청
    * @returns {{ success, generationId }} 비동기 operationId
    */
-  const generateVideoT2V = useCallback(async (prompt, model, aspectRatio, duration) => {
+  const generateVideoT2V = useCallback(async (prompt, model, aspectRatio, duration, videoBatchCount) => {
     const token = await getAccessToken()
     if (!token) return { success: false, error: 'No access token' }
 
     try {
       return await window.electronAPI.generateVideoT2V({
-        token, prompt, projectId, model, aspectRatio, duration
+        token, prompt, projectId, model, aspectRatio, duration, videoBatchCount
       })
     } catch (error) {
       return { success: false, error: error.message }
@@ -149,15 +149,16 @@ export function useFlowAPI() {
   /**
    * Image to Video (Frame to Video) 생성 요청
    * @param {string} startImageMediaId - 시작 이미지의 mediaId
+   * @param {string} [endImageMediaId] - 끝 이미지의 mediaId (있으면 StartAndEnd 엔드포인트 사용)
    * @returns {{ success, generationId }}
    */
-  const generateVideoI2V = useCallback(async (prompt, startImageMediaId, model, aspectRatio, duration) => {
+  const generateVideoI2V = useCallback(async (prompt, startImageMediaId, endImageMediaId, model, aspectRatio, duration) => {
     const token = await getAccessToken()
     if (!token) return { success: false, error: 'No access token' }
 
     try {
       return await window.electronAPI.generateVideoI2V({
-        token, prompt, startImageMediaId, projectId, model, aspectRatio, duration
+        token, prompt, startImageMediaId, endImageMediaId, projectId, model, aspectRatio, duration
       })
     } catch (error) {
       return { success: false, error: error.message }
@@ -182,10 +183,22 @@ export function useFlowAPI() {
     }
   }, [getAccessToken, projectId])
 
+  /**
+   * 토큰 캐시 초기화 (401 에러 시 호출)
+   * 다음 getAccessToken 호출 시 Flow 웹뷰에서 새로 추출
+   */
+  const clearTokenCache = useCallback(() => {
+    setAccessToken(null)
+    setTokenExpiry(null)
+    localStorage.removeItem('flowAccessToken')
+    localStorage.removeItem('flowTokenExp')
+  }, [])
+
   return {
     accessToken,
     projectId,
     getAccessToken,
+    clearTokenCache,
     generateImageDOM,
     uploadReference,
     fetchMedia,

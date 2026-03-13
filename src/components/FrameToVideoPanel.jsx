@@ -5,14 +5,16 @@
  * 비디오 생성 요청을 구성하는 UI.
  *
  * Props:
- *   scenes       — 전체 씬 배열
- *   framePairs   — [{ id, startSceneId, endSceneId, prompt, status }]
- *   onUpdate     — framePairs 업데이트 콜백
- *   disabled     — 생성 중 비활성화
- *   t            — i18n 함수
+ *   scenes             — 전체 씬 배열 (이미지)
+ *   videoScenes        — 비디오 씬 배열 (비디오 탭 프롬프트)
+ *   framePairs         — [{ id, startSceneId, endSceneId, prompt, videoPrompt, customPrompt, status }]
+ *   onUpdate           — framePairs 업데이트 콜백
+ *   onShowSceneDetail  — 씬 상세 모달 열기 콜백
+ *   disabled           — 생성 중 비활성화
+ *   t                  — i18n 함수
  */
 
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 
 const STATUS_ICONS = {
   waiting: '⏳',
@@ -23,12 +25,44 @@ const STATUS_ICONS = {
 
 let nextPairId = 1
 
-export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabled, t }) {
+export default function FrameToVideoPanel({ scenes, videoScenes = [], framePairs, onUpdate, promptSource = 'image', onPromptSourceChange, onShowSceneDetail, disabled, t }) {
+
   // mediaId 있는 씬만 드롭다운에 표시
   const availableScenes = useMemo(
     () => scenes.filter(s => s.mediaId),
     [scenes]
   )
+
+  // 새로운 이미지 씬이 생기면 자동으로 프레임 페어 추가 (unselected)
+  const prevAvailableCountRef = useRef(availableScenes.length)
+  useEffect(() => {
+    const usedStart = new Set(framePairs.map(p => p.startSceneId))
+    const unusedScenes = availableScenes.filter(s => !usedStart.has(s.id))
+
+    if (unusedScenes.length === 0) {
+      prevAvailableCountRef.current = availableScenes.length
+      return
+    }
+
+    // 마운트 시 또는 새 이미지 씬 추가됐을 때만 실행
+    const newPairs = unusedScenes.map((scene) => {
+      const globalIdx = availableScenes.indexOf(scene)
+      const nextScene = globalIdx >= 0 ? availableScenes[globalIdx + 1] : null
+      return {
+        id: `fp_${nextPairId++}`,
+        startSceneId: scene.id,
+        endSceneId: nextScene?.id || '',
+        prompt: scene.prompt || '',
+        videoPrompt: '',
+        customPrompt: '',
+        status: 'waiting',
+        selected: false,
+      }
+    })
+
+    onUpdate([...framePairs, ...newPairs])
+    prevAvailableCountRef.current = availableScenes.length
+  }, [availableScenes.length]) // 이미지 씬 수가 바뀔 때만
 
   const toggleSelect = (id) => {
     onUpdate(framePairs.map(p =>
@@ -63,9 +97,36 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
         startSceneId: nextStartId,
         endSceneId: nextEnd?.id || '',
         prompt: nextStart?.prompt || '',
+        videoPrompt: '',
+        customPrompt: '',
         status: 'waiting',
       },
     ])
+  }
+
+  // Auto Batch — 아직 배치 안 된 씬 전부를 프레임 페어로 자동 생성
+  const autoBatch = () => {
+    const usedStart = new Set(framePairs.map(p => p.startSceneId))
+    const unusedScenes = availableScenes.filter(s => !usedStart.has(s.id))
+
+    if (unusedScenes.length === 0) return
+
+    const newPairs = unusedScenes.map((scene, i) => {
+      const globalIdx = availableScenes.indexOf(scene)
+      const nextScene = globalIdx >= 0 ? availableScenes[globalIdx + 1] : null
+      return {
+        id: `fp_${nextPairId++}`,
+        startSceneId: scene.id,
+        endSceneId: nextScene?.id || '',
+        prompt: scene.prompt || '',
+        videoPrompt: '',
+        customPrompt: '',
+        status: 'waiting',
+        selected: false,
+      }
+    })
+
+    onUpdate([...framePairs, ...newPairs])
   }
 
   const removeRow = (index) => {
@@ -108,7 +169,17 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
           <span className="mapping-col col-num">#</span>
           <span className="mapping-col col-image">{t('frameToVideo.startImage')}</span>
           <span className="mapping-col col-image">{t('frameToVideo.endImage')}</span>
-          <span className="mapping-col col-prompt">{t('frameToVideo.prompt')}</span>
+          <span className="mapping-col col-prompt">
+            <select
+              value={promptSource}
+              onChange={(e) => onPromptSourceChange(e.target.value)}
+              className="prompt-source-toggle"
+            >
+              <option value="image">{t('frameToVideo.imagePrompt')}</option>
+              <option value="video">{t('frameToVideo.videoPromptLabel')}</option>
+              <option value="none">{t('frameToVideo.noPrompt')}</option>
+            </select>
+          </span>
           <span className="mapping-col col-status">{t('frameToVideo.status')}</span>
           <span className="mapping-col col-action"></span>
         </div>
@@ -131,7 +202,12 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
                   <img
                     src={getSceneThumb(pair.startSceneId)}
                     alt=""
-                    className="scene-thumb"
+                    className="scene-thumb scene-thumb-clickable"
+                    onClick={() => {
+                      const scene = scenes.find(s => s.id === pair.startSceneId)
+                      if (scene && onShowSceneDetail) onShowSceneDetail(scene)
+                    }}
+                    title={t('frameToVideo.clickToDetail')}
                   />
                 )}
                 <select
@@ -156,7 +232,12 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
                   <img
                     src={getSceneThumb(pair.endSceneId)}
                     alt=""
-                    className="scene-thumb"
+                    className="scene-thumb scene-thumb-clickable"
+                    onClick={() => {
+                      const scene = scenes.find(s => s.id === pair.endSceneId)
+                      if (scene && onShowSceneDetail) onShowSceneDetail(scene)
+                    }}
+                    title={t('frameToVideo.clickToDetail')}
                   />
                 )}
                 <select
@@ -174,15 +255,35 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
               </div>
             </div>
 
-            {/* 프롬프트 */}
+            {/* 프롬프트 — 이미지/비디오/직접입력 모드 */}
             <div className="mapping-col col-prompt">
-              <input
-                type="text"
-                value={pair.prompt}
-                onChange={(e) => updatePair(index, 'prompt', e.target.value)}
-                disabled={disabled || pair.status === 'generating'}
-                placeholder={t('frameToVideo.promptPlaceholder')}
-              />
+              {promptSource === 'image' && (
+                <input
+                  type="text"
+                  value={pair.prompt || ''}
+                  onChange={(e) => updatePair(index, 'prompt', e.target.value)}
+                  disabled={disabled || pair.status === 'generating'}
+                  placeholder={t('frameToVideo.promptPlaceholder')}
+                />
+              )}
+              {promptSource === 'video' && (
+                <input
+                  type="text"
+                  value={pair.videoPrompt || videoScenes[index]?.prompt || ''}
+                  onChange={(e) => updatePair(index, 'videoPrompt', e.target.value)}
+                  disabled={disabled || pair.status === 'generating'}
+                  placeholder={t('frameToVideo.videoPromptPlaceholder')}
+                />
+              )}
+              {promptSource === 'none' && (
+                <input
+                  type="text"
+                  value={pair.customPrompt || ''}
+                  onChange={(e) => updatePair(index, 'customPrompt', e.target.value)}
+                  disabled={disabled || pair.status === 'generating'}
+                  placeholder={t('frameToVideo.customPromptPlaceholder')}
+                />
+              )}
             </div>
 
             {/* 상태 */}
@@ -205,14 +306,24 @@ export default function FrameToVideoPanel({ scenes, framePairs, onUpdate, disabl
         ))}
       </div>
 
-      {/* 행 추가 버튼 */}
-      <button
-        className="btn-add-row"
-        onClick={addRow}
-        disabled={disabled}
-      >
-        {t('frameToVideo.addRow')}
-      </button>
+      {/* 행 추가 + 자동 배치 버튼 */}
+      <div className="video-panel-actions">
+        <button
+          className="btn-add-row"
+          onClick={addRow}
+          disabled={disabled}
+        >
+          {t('frameToVideo.addRow')}
+        </button>
+        <button
+          className="btn-add-row btn-auto-batch"
+          onClick={autoBatch}
+          disabled={disabled || availableScenes.filter(s => !new Set(framePairs.map(p => p.startSceneId)).has(s.id)).length === 0}
+          title={t('frameToVideo.autoBatchHint')}
+        >
+          {t('frameToVideo.autoBatch')}
+        </button>
+      </div>
     </div>
   )
 }

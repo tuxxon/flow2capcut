@@ -5,8 +5,6 @@
  * and video status polling.
  */
 
-import { randomUUID } from 'node:crypto'
-
 /**
  * Register video-generation-related IPC handlers.
  *
@@ -19,7 +17,8 @@ export function registerVideoIPC(ipcMain, deps) {
     parseFlowResponse, getRecaptchaToken, configureFlowMode, switchFlowToVideoMode,
     getCapturedProjectId, setCapturedProjectId,
     getPendingVideoGeneration, setPendingVideoGeneration,
-    SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_STATUS_URL,
+    getPendingI2VInjection, setPendingI2VInjection,
+    SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL,
     API_HEADERS, FLOW_URL,
   } = deps
 
@@ -48,7 +47,7 @@ export function registerVideoIPC(ipcMain, deps) {
 
   // Text-to-Video generation (DOM 자동화 — 페이지가 reCAPTCHA 자체 처리)
   ipcMain.handle('flow:generate-video-t2v', async (event, {
-    token, prompt, projectId, model, aspectRatio, duration
+    token, prompt, projectId, model, aspectRatio, duration, videoBatchCount
   }) => {
     const flowView = getFlowView()
     const mainWindow = getMainWindow()
@@ -64,8 +63,9 @@ export function registerVideoIPC(ipcMain, deps) {
         return { success: false, error: 'Not on Flow project page. Please open a Flow project first.' }
       }
 
-      // 1. 비디오 모드로 전환
-      const modeResult = await switchFlowToVideoMode()
+      // 1. 비디오 모드로 전환 (배치 카운트 적용)
+      const effectiveBatchCount = Math.max(1, Math.min(4, videoBatchCount || 1))
+      const modeResult = await configureFlowMode('VIDEO', effectiveBatchCount)
       if (!modeResult.success) {
         return { success: false, error: modeResult.error || 'Failed to switch to video mode' }
       }
@@ -250,109 +250,223 @@ export function registerVideoIPC(ipcMain, deps) {
     }
   })
 
-  // Image-to-Video generation (DOM 자동화)
-  // I2V는 비디오 모드에서 시작 이미지가 필요하므로, 직접 API 호출을 페이지 컨텍스트에서 실행
-  // (Flow 페이지 UI에서 이미지 업로드 + I2V 모드 전환이 복잡하므로 인젝션 방식 사용)
+  // Image-to-Video generation (DOM 자동화 + CDP Fetch 인터셉션)
+  // T2V와 동일한 DOM 흐름: 프롬프트 주입 → Generate 클릭 → CDP 응답 캡처
+  // 차이점: CDP Fetch로 나가는 T2V 요청을 가로채서 startImage 주입 + URL을 I2V 엔드포인트로 변경
   ipcMain.handle('flow:generate-video-i2v', async (event, {
-    token, prompt, startImageMediaId, projectId, model, aspectRatio, duration
+    token, prompt, startImageMediaId, endImageMediaId, projectId, model, aspectRatio, duration, videoBatchCount
   }) => {
     const flowView = getFlowView()
-    if (!token) return { success: false, error: 'No token' }
+    const mainWindow = getMainWindow()
     if (!startImageMediaId) return { success: false, error: 'No start image mediaId' }
     if (!flowView) return { success: false, error: 'Flow view not ready' }
 
-    console.log('[Flow Video I2V] Starting page-context video generation, mediaId:', startImageMediaId?.substring(0, 8))
+    const hasEndImage = !!endImageMediaId
+    console.log('[Flow Video I2V] Starting DOM-triggered I2V generation, start:', startImageMediaId?.substring(0, 8),
+      hasEndImage ? ', end: ' + endImageMediaId?.substring(0, 8) : '(start only)')
 
-    // I2V model
-    const apiModelKey = String(model || '').toLowerCase().includes('quality')
-      ? 'veo_3_1_i2v_quality_ultra_relaxed'
-      : 'veo_3_1_i2v_s_fast_ultra_relaxed'
+    let cdpFetchEnabled = false
 
-    const batchId = randomUUID()
-    const pid = projectId || getCapturedProjectId() || ''
-    const apiAspect = aspectRatio || 'VIDEO_ASPECT_RATIO_LANDSCAPE'
-
-    // I2V는 AutoFlow와 동일하게 페이지 컨텍스트에서 직접 fetch 실행
-    // credentials: "include"와 mode: "cors" 포함 (AutoFlow I2V 패턴)
-    // 페이지가 reCAPTCHA를 자체적으로 로드하므로 grecaptcha.enterprise.execute가 유효
     try {
-      const result = await flowView.webContents.executeJavaScript(`
+      // 0. Flow 프로젝트 페이지 확인
+      const currentUrl = flowView.webContents.getURL()
+      if (!currentUrl.includes('/project/') && !currentUrl.includes('/tools/flow/')) {
+        return { success: false, error: 'Not on Flow project page. Please open a Flow project first.' }
+      }
+
+      // 1. 비디오 모드로 전환 (배치 카운트 적용)
+      const effectiveBatchCount = Math.max(1, Math.min(4, videoBatchCount || 1))
+      const modeResult = await configureFlowMode('VIDEO', effectiveBatchCount)
+      if (!modeResult.success) {
+        return { success: false, error: modeResult.error || 'Failed to switch to video mode' }
+      }
+      console.log('[Flow Video I2V] Video mode active:', modeResult.method)
+
+      // 2. 프롬프트 입력 (T2V와 동일한 Slate 에디터 사용)
+      const promptBounds = flowView.getBounds()
+      const promptWasHidden = (promptBounds.width === 0 || promptBounds.height === 0)
+      if (promptWasHidden) {
+        const { width, height } = mainWindow.getContentBounds()
+        flowView.setBounds({ x: width + 5000, y: 0, width, height })
+        await new Promise(r => setTimeout(r, 300))
+      }
+
+      const promptResult = await flowView.webContents.executeJavaScript(`
         (async function() {
-          try {
-            // 1. reCAPTCHA 토큰 획득 (페이지 컨텍스트 — origin 일치)
-            let recaptchaToken = '';
+          const promptText = ${JSON.stringify(prompt || '')};
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+          // Slate editor 찾기
+          let editor = document.querySelector("[data-slate-editor='true']");
+          if (!editor) editor = document.querySelector("div[role='textbox'][contenteditable='true']:not(#af-bot-panel *)");
+          if (!editor) editor = document.querySelector('[contenteditable="true"]:not([aria-hidden])');
+
+          if (!editor) return { success: false, error: 'Editor not found' };
+
+          const isSlate = !!(editor.matches?.("[data-slate-editor='true']") || editor.querySelector?.("[data-slate-node]"));
+
+          // Slate React API로 프롬프트 주입
+          let injected = false;
+          if (isSlate) {
             try {
-              const g = window.grecaptcha;
-              if (g?.enterprise?.execute) {
-                recaptchaToken = String(await g.enterprise.execute(
-                  '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV',
-                  { action: 'generate' }
-                ) || '').trim();
+              const reactKeys = Object.keys(editor).filter(k => k.startsWith('__react'));
+              let slateEditor = null;
+              for (const key of reactKeys) {
+                const stack = [editor[key]];
+                const visited = new Set();
+                let guard = 0;
+                while (stack.length > 0 && guard < 5000) {
+                  const node = stack.pop(); guard++;
+                  if (!node || typeof node !== 'object' || visited.has(node)) continue;
+                  visited.add(node);
+                  const candidate = node?.memoizedProps?.node || node?.memoizedProps?.editor
+                    || node?.pendingProps?.node || node?.pendingProps?.editor
+                    || node?.stateNode?.editor || node?.editor;
+                  if (candidate && typeof candidate.apply === 'function') { slateEditor = candidate; break; }
+                  if (node.child) stack.push(node.child);
+                  if (node.sibling) stack.push(node.sibling);
+                  if (node.return) stack.push(node.return);
+                  if (node.alternate) stack.push(node.alternate);
+                }
+                if (slateEditor) break;
+              }
+              if (slateEditor) {
+                try {
+                  const existingText = slateEditor.children?.[0]?.children?.[0]?.text || '';
+                  if (existingText) slateEditor.apply({ type: 'remove_text', path: [0, 0], offset: 0, text: existingText });
+                } catch {}
+                slateEditor.apply({ type: 'insert_text', path: [0, 0], offset: 0, text: promptText });
+                if (typeof slateEditor.onChange === 'function') slateEditor.onChange();
+                editor.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(200);
+                const modelText = (slateEditor.children?.[0]?.children?.[0]?.text || '').trim();
+                if (modelText && modelText.includes(promptText.slice(0, 40))) injected = true;
               }
             } catch {}
-
-            // 2. 액세스 토큰 획득 (세션 API에서)
-            let accessToken = ${JSON.stringify(token)};
-            if (!accessToken) {
-              try {
-                const sessResp = await fetch('${SESSION_URL}');
-                if (sessResp.ok) {
-                  const sessText = await sessResp.text();
-                  const sessData = JSON.parse(sessText.replace(/^\\)\\]\\}',?\\s*/, '').trim());
-                  accessToken = sessData?.access_token || sessData?.accessToken || '';
-                }
-              } catch {}
-            }
-            if (!accessToken) return { ok: false, error: 'no_access_token' };
-
-            // 3. API 요청 본문
-            const body = {
-              mediaGenerationContext: { batchId: ${JSON.stringify(batchId)} },
-              clientContext: {
-                projectId: ${JSON.stringify(pid)},
-                tool: 'PINHOLE',
-                userPaygateTier: 'PAYGATE_TIER_TWO',
-                sessionId: ';' + Date.now(),
-                ...(recaptchaToken ? {
-                  recaptchaContext: {
-                    token: recaptchaToken,
-                    applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB'
-                  }
-                } : {})
-              },
-              requests: [{
-                aspectRatio: ${JSON.stringify(apiAspect)},
-                seed: Math.floor(Math.random() * 2147483647),
-                textInput: { structuredPrompt: { parts: [{ text: ${JSON.stringify(prompt || '')} }] } },
-                videoModelKey: ${JSON.stringify(apiModelKey)},
-                metadata: {},
-                startImage: { mediaId: ${JSON.stringify(startImageMediaId)} }
-              }],
-              useV2ModelConfig: true
-            };
-
-            // 4. fetch 실행 (페이지 컨텍스트 — credentials: include로 쿠키 포함)
-            const resp = await fetch('${VIDEO_I2V_URL}', {
-              method: 'POST',
-              mode: 'cors',
-              credentials: 'include',
-              headers: { authorization: 'Bearer ' + accessToken },
-              body: JSON.stringify(body)
-            });
-            const text = await resp.text().catch(() => '');
-            return { ok: resp.ok, status: resp.status, text };
-          } catch (e) {
-            return { ok: false, status: 0, error: e.message };
           }
+
+          // Fallback: execCommand
+          if (!injected) {
+            try {
+              editor.focus(); editor.click(); await sleep(100);
+              if (isSlate) {
+                const sel = window.getSelection(); const range = document.createRange();
+                const stringNodes = Array.from(editor.querySelectorAll('[data-slate-string]'))
+                  .map(n => n.firstChild).filter(n => n && n.nodeType === Node.TEXT_NODE);
+                if (stringNodes.length > 0) {
+                  range.setStart(stringNodes[0], 0);
+                  const last = stringNodes[stringNodes.length - 1];
+                  range.setEnd(last, (last.textContent || '').length);
+                } else {
+                  const zeroNode = Array.from(editor.querySelectorAll('[data-slate-zero-width]'))
+                    .map(n => n.firstChild).find(n => n && n.nodeType === Node.TEXT_NODE);
+                  if (zeroNode) { range.setStart(zeroNode, 0); range.setEnd(zeroNode, (zeroNode.textContent || '').length); }
+                  else range.selectNodeContents(editor);
+                }
+                sel.removeAllRanges(); sel.addRange(range);
+              } else {
+                document.execCommand('selectAll', false, null);
+              }
+              document.execCommand('delete', false, null); await sleep(50);
+              try { editor.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: promptText })); } catch {}
+              const inserted = document.execCommand('insertText', false, promptText);
+              if (inserted) { injected = true; }
+            } catch {}
+          }
+
+          if (!injected) return { success: false, error: 'Prompt injection failed' };
+          await sleep(500);
+          return { success: true };
         })()
       `)
 
-      if (!result.ok) {
-        console.error('[Flow Video I2V] HTTP', result.status, (result.text || result.error || '').substring(0, 200))
-        return { success: false, error: `HTTP ${result.status}: ${(result.text || result.error || '').substring(0, 200)}` }
+      if (promptWasHidden) {
+        flowView.setBounds(promptBounds)
+        await new Promise(r => setTimeout(r, 200))
       }
 
-      const data = parseFlowResponse(result.text)
+      if (!promptResult?.success) {
+        return { success: false, error: promptResult?.error || 'Prompt injection failed' }
+      }
+      console.log('[Flow Video I2V] Prompt injected successfully')
+
+      // 3. CDP Fetch 인터셉션 활성화 — 나가는 T2V 요청을 I2V로 변환
+      setPendingI2VInjection({
+        startImageMediaId,
+        endImageMediaId: hasEndImage ? endImageMediaId : null,
+        i2vUrl: VIDEO_I2V_URL,
+        i2vStartEndUrl: VIDEO_I2V_START_END_URL,
+      })
+      try {
+        await flowView.webContents.debugger.sendCommand('Fetch.enable', {
+          patterns: [{ urlPattern: '*batchAsyncGenerateVideo*', requestStage: 'Request' }]
+        })
+        cdpFetchEnabled = true
+        console.log('[Flow Video I2V] CDP Fetch interception enabled for',
+          hasEndImage ? 'start+end image injection' : 'start image injection')
+      } catch (e) {
+        console.warn('[Flow Video I2V] Fetch.enable failed:', e.message)
+        setPendingI2VInjection(null)
+        return { success: false, error: 'Failed to enable CDP Fetch interception: ' + e.message }
+      }
+
+      // 4. CDP 비디오 응답 캡처 Promise 설정
+      let resolveVideo = null
+      let videoTimeout = null
+      const videoResponsePromise = new Promise((resolve) => {
+        videoTimeout = setTimeout(() => {
+          if (getPendingVideoGeneration()) {
+            setPendingVideoGeneration(null)
+            resolve({ error: true, message: 'Video response timeout (30s)' })
+          }
+        }, 30000)
+        resolveVideo = resolve
+      })
+
+      // 5. Generate 버튼 Trusted Click
+      const generateBtnSelector = `(function() {
+        try {
+          const xr = document.evaluate("//button[.//i[text()='arrow_forward']]",
+            document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          if (xr.singleNodeValue && !xr.singleNodeValue.disabled) return xr.singleNodeValue;
+        } catch {}
+        for (const b of document.querySelectorAll('button')) {
+          for (const icon of b.querySelectorAll('i')) {
+            if (icon.textContent.trim() === 'arrow_forward' && !b.disabled) return b;
+          }
+        }
+        return null;
+      })()`
+
+      const clickResult = await trustedClickOnFlowView(generateBtnSelector)
+      console.log('[Flow Video I2V] Trusted click result:', clickResult)
+
+      if (!clickResult?.success) {
+        clearTimeout(videoTimeout)
+        return { success: false, error: clickResult?.error || 'Failed to click Generate button' }
+      }
+
+      // ★ 클릭 직후 pendingVideoGeneration 설정
+      const videoSetAt = Date.now() / 1000 - 2
+      setPendingVideoGeneration({
+        setAt: videoSetAt,
+        resolve: (result) => {
+          clearTimeout(videoTimeout)
+          resolveVideo(result)
+        }
+      })
+      console.log('[Flow Video I2V] pendingVideoGeneration set, waiting for CDP capture...')
+
+      // 6. 비디오 API 응답 대기
+      const netResult = await videoResponsePromise
+
+      if (netResult.error) {
+        console.warn('[Flow Video I2V] Video API failed:', netResult.message || `HTTP ${netResult.status}`)
+        return { success: false, error: netResult.message || `HTTP ${netResult.status}: Video generation failed` }
+      }
+
+      // 7. 응답에서 generation ID 추출
+      const data = parseFlowResponse(netResult.body)
       const generationId = extractVideoGenerationId(data)
 
       if (generationId) {
@@ -364,6 +478,15 @@ export function registerVideoIPC(ipcMain, deps) {
     } catch (e) {
       console.error('[Flow Video I2V] Error:', e.message)
       return { success: false, error: e.message }
+    } finally {
+      // CDP Fetch 인터셉션 비활성화 (항상 정리)
+      if (cdpFetchEnabled) {
+        setPendingI2VInjection(null)
+        try {
+          await flowView.webContents.debugger.sendCommand('Fetch.disable')
+          console.log('[Flow Video I2V] CDP Fetch interception disabled')
+        } catch {}
+      }
     }
   })
 
@@ -453,7 +576,12 @@ export function registerVideoIPC(ipcMain, deps) {
             console.log('[Flow VideoStatus] ✅ Complete! videoUrl:', videoUrl?.substring(0, 80))
             statuses.push({ status: 'complete', mediaId, videoUrl })
           } else if (genStatus.includes('FAILED') || genStatus.includes('ERROR')) {
-            statuses.push({ status: 'failed', error: genStatus })
+            console.warn('[Flow VideoStatus] ❌ FAILED media detail:', JSON.stringify(m).substring(0, 1000))
+            const failReason = m?.mediaMetadata?.mediaStatus?.failureReason
+              || m?.mediaMetadata?.mediaStatus?.errorMessage
+              || m?.error?.message
+              || genStatus
+            statuses.push({ status: 'failed', error: failReason })
           } else {
             statuses.push({ status: 'pending', progress: null })
           }

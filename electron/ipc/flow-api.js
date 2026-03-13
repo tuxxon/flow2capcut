@@ -120,7 +120,7 @@ export function registerFlowAPIIPC(ipcMain, deps) {
 
   // Generate image via Flow API
   ipcMain.handle('flow:generate-image', async (event, {
-    token, prompt, aspectRatio, seed, model, projectId, referenceImages
+    token, prompt, aspectRatio, seed, model, projectId, referenceImages, batchCount
   }) => {
     console.log('[Flow API] generate-image:', { prompt: prompt?.substring(0, 50), model, aspectRatio })
     if (!prompt) return { success: false, error: 'No prompt' }
@@ -259,8 +259,9 @@ export function registerFlowAPIIPC(ipcMain, deps) {
         }
       }
 
-      // 0.8. 이미지 모드 + 배치 x2 설정
-      const modeResult = await configureFlowMode('IMAGE', 2)
+      // 0.8. 이미지 모드 + 배치 설정 (Settings에서 전달받은 값 사용, 기본 x2)
+      const effectiveBatchCount = Math.max(1, Math.min(4, batchCount || 2))
+      const modeResult = await configureFlowMode('IMAGE', effectiveBatchCount)
       if (modeResult.success) {
         console.log('[Flow API] Image mode configured:', modeResult.method, 'batch:', modeResult.batch)
       } else {

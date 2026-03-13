@@ -33,7 +33,7 @@ export default function VideoDetailModal({
     })
   }, [video.video])
 
-  // 히스토리 로드
+  // 히스토리 로드 + 비디오 데이터 없으면 최신 히스토리에서 자동 로드
   useEffect(() => {
     if (!projectName || !video.id) return
 
@@ -50,11 +50,16 @@ export default function VideoDetailModal({
             }
           })
         )
-        setHistories(historiesWithData.filter(h => h.data))
+        const validHistories = historiesWithData.filter(h => h.data)
+        setHistories(validHistories)
+        // 메모리에 비디오 데이터 없으면 최신 히스토리에서 자동 로드
+        if (!video.video && validHistories.length > 0) {
+          setActiveVideo(validHistories[0].data)
+        }
       }
     }
     loadHistory()
-  }, [projectName, video.id])
+  }, [projectName, video.id, video.video])
 
   const videoSrc = activeVideo
     ? (activeVideo.startsWith('data:') ? activeVideo : `data:video/mp4;base64,${activeVideo}`)

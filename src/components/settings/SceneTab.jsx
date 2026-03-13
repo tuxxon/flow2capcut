@@ -2,6 +2,14 @@
  * SceneTab - 씬 설정 탭
  */
 
+const BATCH_OPTIONS = [1, 2, 3, 4]
+const RESOLUTION_OPTIONS = [
+  { value: '270p', label: '270p' },
+  { value: '720p', label: '720p' },
+  { value: '1080p', label: '1080p (HD)' },
+  { value: '4k', label: '4K' },
+]
+
 export default function SceneTab({ localSettings, setLocalSettings, t }) {
   return (
     <div className="tab-panel">
@@ -30,6 +38,61 @@ export default function SceneTab({ localSettings, setLocalSettings, t }) {
           <span className="threshold-value">{localSettings.exportThreshold || 50}%</span>
         </div>
         <span className="setting-sublabel">{t('settings.exportThresholdHint')}</span>
+      </div>
+
+      {/* 배치 카운트 설정 */}
+      <div className="settings-section">
+        <h3>{t('settings.batchSettings')}</h3>
+
+        <div className="setting-row">
+          <label className="setting-label">{t('settings.imageBatchCount')}</label>
+          <div className="batch-selector">
+            {BATCH_OPTIONS.map(n => (
+              <button
+                key={`img-${n}`}
+                className={`batch-btn ${(localSettings.imageBatchCount || 1) === n ? 'active' : ''}`}
+                onClick={() => setLocalSettings(s => ({ ...s, imageBatchCount: n }))}
+              >
+                x{n}
+              </button>
+            ))}
+          </div>
+          <span className="setting-sublabel">{t('settings.imageBatchHint')}</span>
+        </div>
+
+        <div className="setting-row">
+          <label className="setting-label">{t('settings.videoBatchCount')}</label>
+          <div className="batch-selector">
+            {BATCH_OPTIONS.map(n => (
+              <button
+                key={`vid-${n}`}
+                className={`batch-btn ${(localSettings.videoBatchCount || 1) === n ? 'active' : ''}`}
+                onClick={() => setLocalSettings(s => ({ ...s, videoBatchCount: n }))}
+              >
+                x{n}
+              </button>
+            ))}
+          </div>
+          <span className="setting-sublabel">{t('settings.videoBatchHint')}</span>
+        </div>
+      </div>
+
+      {/* 비디오 다운로드 해상도 */}
+      <div className="settings-section">
+        <h3>{t('settings.videoDownloadSettings')}</h3>
+
+        <div className="setting-row">
+          <label className="setting-label">{t('settings.videoResolution')}</label>
+          <select
+            value={localSettings.videoResolution || '1080p'}
+            onChange={(e) => setLocalSettings(s => ({ ...s, videoResolution: e.target.value }))}
+          >
+            {RESOLUTION_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <span className="setting-sublabel">{t('settings.videoResolutionHint')}</span>
+        </div>
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 /**
  * useVideoAutomation — 비디오 생성 자동화 Hook
  *
- * T2V (Text to Video), I2V (Image to Video), R2V (Refs to Video) 모드 지원.
+ * T2V (Text to Video), I2V (Image to Video) 모드 지원.
  * 비동기 비디오 생성 워크플로:
  *   1. 요청 → generationId 반환
  *   2. 10초 간격 폴링 (VIDEO_POLL_INTERVAL)
@@ -14,7 +14,7 @@ import { TIMING } from '../config/defaults'
 import { fileSystemAPI } from './useFileSystem'
 import { toast } from '../components/Toast'
 
-export function useVideoAutomation(flowAPI, t = (key) => key) {
+export function useVideoAutomation(flowAPI, t = (key) => key, onAuthError = null) {
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [progress, setProgress] = useState({ current: 0, total: 0, percent: 0 })
@@ -82,7 +82,7 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
    * 단일 비디오 아이템 처리
    */
   const processVideoItem = async (item, mode, options) => {
-    const { projectName, saveMode, videoModel, aspectRatio, duration } = options
+    const { projectName, saveMode, videoModel, aspectRatio, duration, videoResolution = '1080p', videoBatchCount = 1 } = options
 
     if (stopRequestedRef.current) return
 
@@ -98,7 +98,7 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
     switch (mode) {
       case 't2v': {
         setStatusMessage(`🎬 ${t('videoAutomation.requesting')} — "${prompt.substring(0, 40)}..."`)
-        genResult = await generateVideoT2V(prompt, videoModel, aspectRatio, duration)
+        genResult = await generateVideoT2V(prompt, videoModel, aspectRatio, duration, videoBatchCount)
         break
       }
       case 'i2v': {
@@ -106,14 +106,9 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
         if (!startMediaId) {
           return { success: false, error: 'No start image mediaId' }
         }
+        const endMediaId = item.endMediaId || null
         setStatusMessage(`🎞️ ${t('videoAutomation.requesting')} — Frame→Video`)
-        genResult = await generateVideoI2V(prompt, startMediaId, videoModel, aspectRatio, duration)
-        break
-      }
-      case 'r2v': {
-        // R2V는 현재 T2V API 사용 (레퍼런스 주입은 추후 확장)
-        setStatusMessage(`🔗 ${t('videoAutomation.requesting')} — Refs→Video`)
-        genResult = await generateVideoT2V(prompt, videoModel, aspectRatio, duration)
+        genResult = await generateVideoI2V(prompt, startMediaId, endMediaId, videoModel, aspectRatio, duration)
         break
       }
       default:
@@ -121,6 +116,10 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
     }
 
     if (!genResult.success) {
+      // 401 인증 에러 감지 → authReady 리셋
+      if (genResult.error && (genResult.error.includes('401') || genResult.error.includes('auth'))) {
+        onAuthError?.()
+      }
       return { success: false, error: genResult.error }
     }
 
@@ -139,13 +138,13 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
     setStatusMessage(`📥 ${t('videoAutomation.downloading')}`)
     let mediaResult
 
-    // 방법 1: DOM 기반 다운로드 (1080p 해상도)
+    // 방법 1: DOM 기반 다운로드 (설정 해상도 사용)
     if (window.electronAPI?.domDownloadVideo) {
       try {
-        console.log('[VideoAutomation] Trying DOM download for mediaId:', pollResult.mediaId?.substring(0, 20))
+        console.log('[VideoAutomation] Trying DOM download for mediaId:', pollResult.mediaId?.substring(0, 20), 'resolution:', videoResolution)
         mediaResult = await window.electronAPI.domDownloadVideo({
           mediaId: pollResult.mediaId,
-          resolution: '1080p'
+          resolution: videoResolution
         })
         if (mediaResult?.success) {
           console.log('[VideoAutomation] ✅ DOM download success')
@@ -200,19 +199,20 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
 
   /**
    * 비디오 자동화 시작
-   * @param {{ mode, scenes?, framePairs?, refPairs?, projectName, saveMode, videoModel, aspectRatio, duration }} options
+   * @param {{ mode, scenes?, framePairs?, projectName, saveMode, videoModel, aspectRatio, duration }} options
    */
   const start = useCallback(async (options = {}) => {
     const {
       mode = 't2v',
       scenes = [],
       framePairs = [],
-      refPairs = [],
       projectName = '',
       saveMode = 'folder',
       videoModel = 'veo_3_1_t2v_fast_ultra_relaxed',
       aspectRatio = 'VIDEO_ASPECT_RATIO_LANDSCAPE',
       duration = 8,
+      videoResolution = '1080p',
+      videoBatchCount = 1,
       onItemUpdate
     } = options
 
@@ -252,15 +252,6 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
           }))
         break
 
-      case 'r2v':
-        items = refPairs
-          .filter(p => (p.refIds?.length > 0) && p.status !== 'complete')
-          .map(p => ({
-            id: p.id,
-            prompt: p.prompt,
-            refMediaIds: p._refMediaIds || [],  // App.jsx에서 resolve
-          }))
-        break
     }
 
     const total = items.length
@@ -281,7 +272,7 @@ export function useVideoAutomation(flowAPI, t = (key) => key) {
       onItemUpdate?.(item.id, 'generating')
 
       const result = await processVideoItem(item, mode, {
-        projectName, saveMode, videoModel, aspectRatio, duration
+        projectName, saveMode, videoModel, aspectRatio, duration, videoResolution, videoBatchCount
       })
 
       if (result.success) {

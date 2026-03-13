@@ -366,6 +366,19 @@ html, body {
   font-size: 0.82rem;
 }
 
+.prompt-source-toggle {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-color);
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.prompt-source-toggle:hover {
+  border-color: var(--accent-color, #6495ed);
+}
+
 .col-status {
   width: 80px;
   font-size: 0.78rem;
@@ -401,6 +414,16 @@ html, body {
   object-fit: cover;
   border-radius: 3px;
   flex-shrink: 0;
+}
+
+.scene-thumb-clickable {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.scene-thumb-clickable:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 6px rgba(100, 149, 237, 0.6);
+  border-radius: 3px;
 }
 
 /* Reference Chips */
@@ -470,6 +493,23 @@ html, body {
 .btn-add-row:hover:not(:disabled) {
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+.video-panel-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-auto-batch {
+  border-style: solid !important;
+  background: var(--bg-secondary) !important;
+}
+
+.btn-auto-batch:hover:not(:disabled) {
+  background: var(--primary-color) !important;
+  color: white !important;
+  border-color: var(--primary-color) !important;
 }
 
 .btn-remove {

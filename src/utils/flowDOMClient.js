@@ -139,7 +139,7 @@ export function requestStopDOM() {
  * 3) CDP로 batchGenerateImages 응답 캡처
  * 4) base64 이미지 추출 또는 mediaId → fetch
  */
-export async function generateImageDOM(prompt, referenceImages = []) {
+export async function generateImageDOM(prompt, referenceImages = [], { batchCount } = {}) {
   try {
     // 프로젝트 초기화: 현재 URL 확인 후 필요시 생성
     await ensureFlowProject(false)
@@ -159,7 +159,8 @@ export async function generateImageDOM(prompt, referenceImages = []) {
       model: null,
       projectId: null,
       seed: null,
-      referenceImages: referenceImages.length > 0 ? referenceImages : undefined
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      batchCount: batchCount || undefined
     })
 
     console.log('[DOM] flow:generate-image result:', result?.success,

@@ -1,6 +1,5 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 import { registerFilesystemIPC } from './ipc/filesystem.js'
@@ -44,6 +43,7 @@ const MEDIA_REDIRECT_URL = 'https://labs.google/fx/api/trpc/media.getMediaUrlRed
 const TOKEN_INFO_URL = 'https://www.googleapis.com/oauth2/v3/tokeninfo'
 const VIDEO_T2V_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoText`
 const VIDEO_I2V_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoStartImage`
+const VIDEO_I2V_START_END_URL = `${BASE_API_URL}/video:batchAsyncGenerateVideoStartAndEndImage`
 const VIDEO_STATUS_URL = `${BASE_API_URL}/video:batchCheckAsyncVideoGenerationStatus`
 const RECAPTCHA_SITE_KEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV'
 const RECAPTCHA_ACTION = 'generate'
@@ -63,6 +63,7 @@ let capturedProjectId = null // Flow 네트워크에서 자동 캡처된 project
 let pendingGeneration = null // DOM-triggered generation 응답 캡처용 Promise resolver (이미지)
 let pendingVideoGeneration = null // DOM-triggered video generation 응답 캡처용 Promise resolver
 let pendingReferenceImages = null // CDP Fetch 인터셉션용 레퍼런스 이미지 (mediaId 배열)
+let pendingI2VInjection = null // CDP Fetch 인터셉션용 I2V startImage 주입 데이터
 let enterToolClicked = false // Enter tool 버튼 클릭 완료 플래그 (무한루프 방지)
 let consentClicked = false   // 동의 버튼 클릭 완료 플래그 (무한루프 방지)
 
@@ -433,6 +434,7 @@ function createWindow() {
       // CDP Fetch 도메인: 나가는 요청을 가로채서 body 수정 후 계속 전송
       if (method === 'Fetch.requestPaused') {
         const reqUrl = params.request?.url || ''
+        // Case 1: 레퍼런스 이미지 주입 (이미지 생성)
         if (pendingReferenceImages && pendingReferenceImages.length > 0 && reqUrl.includes('batchGenerateImages')) {
           try {
             const body = JSON.parse(params.request.postData || '{}')
@@ -462,6 +464,87 @@ function createWindow() {
               requestId: params.requestId
             })
           }
+        }
+        // Case 2: I2V startImage 주입 (T2V 요청을 I2V로 변환)
+        else if (pendingI2VInjection && reqUrl.includes('batchAsyncGenerateVideo')) {
+          const reqMethod = params.request?.method || ''
+          // OPTIONS 프리플라이트는 수정 없이 통과 (pendingI2VInjection 유지)
+          if (reqMethod === 'OPTIONS') {
+            console.log('[Flow Video I2V] [Fetch] OPTIONS preflight — pass through')
+            flowView.webContents.debugger.sendCommand('Fetch.continueRequest', {
+              requestId: params.requestId
+            })
+          } else {
+            try {
+              const body = JSON.parse(params.request.postData || '{}')
+              const hasEndImage = !!pendingI2VInjection.endImageMediaId
+
+              // T2V → I2V 모델 키 변환 (SHORT 키 사용 — Flow 페이지가 실제로 쓰는 형식)
+              // 참고: AutoFlow 확장은 _ultra_relaxed 접미사 사용하지만, Flow 웹은 짧은 키 사용
+              const T2V_TO_I2V_MODEL_MAP = {
+                // landscape (16:9) 모델
+                'veo_3_1_t2v_fast_ultra_relaxed': 'veo_3_1_i2v_s_fast_fl',
+                'veo_3_1_t2v_fast': 'veo_3_1_i2v_s_fast_fl',
+                // portrait/square 모델
+                'veo_3_1_t2v_fast_portrait_ultra_relaxed': 'veo_3_1_i2v_s_fast',
+                'veo_3_1_t2v_fast_portrait': 'veo_3_1_i2v_s_fast',
+                // quality 모델
+                'veo_3_1_t2v_quality_ultra_relaxed': 'veo_3_1_i2v_quality',
+                'veo_3_1_t2v_quality': 'veo_3_1_i2v_quality',
+              }
+              // 기본 cropCoordinates (전체 이미지)
+              const defaultCrop = { top: 0, left: 0, bottom: 1, right: 1 }
+
+              if (body.requests) {
+                for (const req of body.requests) {
+                  // 모델 키 변환
+                  const originalModel = req.videoModelKey
+                  const i2vModel = T2V_TO_I2V_MODEL_MAP[originalModel]
+                  if (i2vModel) {
+                    req.videoModelKey = i2vModel
+                  } else {
+                    // 매핑에 없는 모델 → 기본 landscape I2V
+                    console.warn('[Flow Video I2V] [Fetch] Unknown T2V model:', originalModel, '→ fallback to veo_3_1_i2v_s_fast_fl')
+                    req.videoModelKey = 'veo_3_1_i2v_s_fast_fl'
+                  }
+                  // startImage + cropCoordinates 주입
+                  req.startImage = {
+                    mediaId: pendingI2VInjection.startImageMediaId,
+                    cropCoordinates: defaultCrop
+                  }
+                  if (hasEndImage) {
+                    req.endImage = {
+                      mediaId: pendingI2VInjection.endImageMediaId,
+                      cropCoordinates: defaultCrop
+                    }
+                  }
+                  console.log('[Flow Video I2V] [Fetch] Model:', originalModel, '→', req.videoModelKey,
+                    '| injecting startImage' + (hasEndImage ? ' + endImage' : ''))
+                }
+              }
+              const modifiedPostData = Buffer.from(JSON.stringify(body)).toString('base64')
+              // I2V 엔드포인트로 URL 변경
+              const targetUrl = hasEndImage
+                ? pendingI2VInjection.i2vStartEndUrl   // batchAsyncGenerateVideoStartAndEndImage
+                : pendingI2VInjection.i2vUrl            // batchAsyncGenerateVideoStartImage
+              flowView.webContents.debugger.sendCommand('Fetch.continueRequest', {
+                requestId: params.requestId,
+                url: targetUrl,
+                postData: modifiedPostData
+              })
+              console.log('[Flow Video I2V] [Fetch] Injected startImage (' +
+                pendingI2VInjection.startImageMediaId?.substring(0, 8) + ')' +
+                (hasEndImage ? ' + endImage (' + pendingI2VInjection.endImageMediaId?.substring(0, 8) + ')' : '') +
+                ' → ' + targetUrl.split('/v1/')[1])
+              console.log('[Flow Video I2V] [Fetch] Modified body:', JSON.stringify(body).substring(0, 800))
+              pendingI2VInjection = null  // 한 번만 주입 (POST에서만 소비)
+            } catch (e) {
+              console.error('[Flow Video I2V] [Fetch] Injection error:', e.message)
+              flowView.webContents.debugger.sendCommand('Fetch.continueRequest', {
+                requestId: params.requestId
+              })
+            }
+          }
         } else {
           // 대상이 아닌 요청 → 수정 없이 통과
           flowView.webContents.debugger.sendCommand('Fetch.continueRequest', {
@@ -477,6 +560,20 @@ function createWindow() {
         requestUrlMap[params.requestId] = params.request?.url || ''
         requestMethodMap[params.requestId] = params.request?.method || ''
         requestSentTimeMap[params.requestId] = params.wallTime || (Date.now() / 1000)
+        // 🔍 비디오 생성 요청 body 캡처 (모델 키 + 이미지 구조 확인용)
+        const sentUrl = params.request?.url || ''
+        if (sentUrl.includes('batchAsyncGenerateVideo') && params.request?.method === 'POST' && params.request?.postData) {
+          try {
+            const sentBody = JSON.parse(params.request.postData)
+            const req0 = sentBody?.requests?.[0] || {}
+            console.log('[Flow Video DEBUG] Request to:', sentUrl.split('/v1/')[1])
+            console.log('[Flow Video DEBUG] videoModelKey:', req0.videoModelKey)
+            console.log('[Flow Video DEBUG] aspectRatio:', req0.aspectRatio)
+            console.log('[Flow Video DEBUG] startImage:', JSON.stringify(req0.startImage || null))
+            console.log('[Flow Video DEBUG] endImage:', JSON.stringify(req0.endImage || null))
+            console.log('[Flow Video DEBUG] paygateTier:', sentBody?.clientContext?.userPaygateTier)
+          } catch {}
+        }
       }
 
       // HTTP 상태 코드 기록 + projectId 캡처
@@ -614,6 +711,9 @@ function createWindow() {
             .then(result => {
               if (result?.body && pendingVideoGeneration) {
                 console.log('[Flow API] [VideoCapture] Video response body captured, length:', result.body.length)
+                if (httpStatus >= 400) {
+                  console.error('[Flow API] [VideoCapture] ❌ Error response body:', result.body.substring(0, 500))
+                }
                 const saved = pendingVideoGeneration
                 pendingVideoGeneration = null
                 saved.resolve({ error: httpStatus >= 400, body: result.body, status: httpStatus })
@@ -796,7 +896,9 @@ const videoDeps = {
   setCapturedProjectId: (v) => { capturedProjectId = v },
   getPendingVideoGeneration: () => pendingVideoGeneration,
   setPendingVideoGeneration: (v) => { pendingVideoGeneration = v },
-  SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_STATUS_URL,
+  getPendingI2VInjection: () => pendingI2VInjection,
+  setPendingI2VInjection: (v) => { pendingI2VInjection = v },
+  SESSION_URL, VIDEO_T2V_URL, VIDEO_I2V_URL, VIDEO_I2V_START_END_URL, VIDEO_STATUS_URL,
   API_HEADERS, FLOW_URL,
 }
 registerVideoIPC(ipcMain, videoDeps)

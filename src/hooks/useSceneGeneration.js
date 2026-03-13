@@ -40,7 +40,7 @@ export function useSceneGeneration({ settings, scenes, scenesHook, flowAPI, open
           caption: r.caption || ''
         }))
 
-      const result = await flowAPI.generateImageDOM(scene.prompt, matchedRefs)
+      const result = await flowAPI.generateImageDOM(scene.prompt, matchedRefs, { batchCount: settings.imageBatchCount })
 
       if (result.success && result.images?.length > 0) {
         // images는 [{ base64, mediaId }] 객체 배열

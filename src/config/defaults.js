@@ -36,8 +36,6 @@ export const DEFAULTS = {
       generateVideoT2V: '/video:batchAsyncGenerateVideoText',
       // 비디오 생성 (Image-to-Video, start frame)
       generateVideoI2V: '/video:batchAsyncGenerateVideoStartImage',
-      // 비디오 생성 (Reference Images)
-      generateVideoR2V: '/video:batchAsyncGenerateVideoReferenceImages',
       // 비디오 상태 확인
       checkVideoStatus: '/video:batchCheckAsyncVideoGenerationStatus',
       // 비디오 업스케일

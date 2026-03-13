@@ -1,6 +1,6 @@
 /**
  * ResultsTable Component - 결과 테이블 (Generic)
- * Supports mediaType: 'image' | 'video' | 'frame-pair' | 'ref-pair'
+ * Supports mediaType: 'image' | 'video' | 'frame-pair'
  */
 
 import { useState, useEffect } from 'react'
@@ -75,8 +75,8 @@ export default function ResultsTable({
     )
   }
 
-  const isVideoType = mediaType === 'video' || mediaType === 'frame-pair' || mediaType === 'ref-pair'
-  const isPairType = mediaType === 'frame-pair' || mediaType === 'ref-pair'
+  const isVideoType = mediaType === 'video' || mediaType === 'frame-pair'
+  const isPairType = mediaType === 'frame-pair'
 
   // done statuses: 'done' (image automation) or 'complete' (video automation) both count
   const doneCount = data.filter(s => s.status === 'done' || s.status === 'complete').length

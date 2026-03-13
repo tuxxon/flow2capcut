@@ -13,6 +13,7 @@ export default {
     login: 'Login',
     authenticated: 'Authenticated',
     checking: 'Checking...',
+    waitingLogin: 'Waiting for login...',
     language: 'Language',
     menu: 'Menu',
   },
@@ -55,7 +56,15 @@ export default {
     generating: 'Generating',
     complete: 'Complete',
     error: 'Error',
-    promptPlaceholder: 'Video prompt...',
+    imagePrompt: '🖼️ Image Prompt',
+    videoPromptLabel: '🎬 Video Prompt',
+    noPrompt: '✏️ Custom',
+    promptPlaceholder: 'Image generation prompt...',
+    videoPromptPlaceholder: 'Video tab prompt...',
+    customPromptPlaceholder: 'Type your own prompt...',
+    autoBatch: '⚡ Auto Batch',
+    autoBatchHint: 'Auto-create frame pairs from all available image scenes',
+    clickToDetail: 'Click to view details',
   },
 
   // Refs to Video panel
@@ -256,6 +265,18 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     projectName: 'Project Name',
     exportThreshold: 'Export Button Display Threshold',
     exportThresholdHint: 'Show export button when this percentage of scenes complete successfully',
+
+    // Batch count
+    batchSettings: 'Batch Generation',
+    imageBatchCount: 'Image Batch Count',
+    imageBatchHint: 'Number of images to generate per request in Flow',
+    videoBatchCount: 'Video Batch Count',
+    videoBatchHint: 'Number of videos to generate per request in Flow',
+
+    // Video download
+    videoDownloadSettings: 'Video Download',
+    videoResolution: 'Download Resolution',
+    videoResolutionHint: 'Upscale resolution for video download (default: 1080p)',
 
     // Display layout
     layoutMode: 'Layout',

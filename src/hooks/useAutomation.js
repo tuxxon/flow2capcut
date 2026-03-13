@@ -48,7 +48,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
    * 단일 씬 처리
    */
   const processScene = async (scene, options) => {
-    const { projectName, saveMode } = options
+    const { projectName, saveMode, imageBatchCount } = options
 
     // 일시정지 대기
     while (pausedRef.current && !stopRequestedRef.current) {
@@ -89,7 +89,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       if (stopRequestedRef.current && retries === 0) return
       if (stopRequestedRef.current && retries > 0) break  // 재시도 중이면 루프 탈출 → 이전 결과 처리
 
-      result = await generateImageDOM(scene.prompt, matchedRefs)
+      result = await generateImageDOM(scene.prompt, matchedRefs, { batchCount: imageBatchCount })
 
       if (result.success) break
 
@@ -160,7 +160,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
         if (newToken) {
           console.log('[Automation] Token refreshed, retrying scene:', scene.id)
           // 재시도 (DOM 모드 + 레퍼런스)
-          const retryResult = await generateImageDOM(scene.prompt, matchedRefs)
+          const retryResult = await generateImageDOM(scene.prompt, matchedRefs, { batchCount: imageBatchCount })
           if (retryResult.success && retryResult.images?.length > 0) {
             // 성공 시 다시 저장 로직으로 (images는 [{ base64, mediaId }])
             const retryImg = retryResult.images[0]
@@ -261,7 +261,8 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
     const {
       projectName = generateProjectName(),
       saveMode = 'folder',
-      sceneIndices = null
+      sceneIndices = null,
+      imageBatchCount = 1
     } = options
 
     if (isRunning) return
@@ -359,6 +360,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
     await runConcurrentQueue(targetScenes, {
       projectName,
       saveMode,
+      imageBatchCount,
     }, total)
     
     // 완료

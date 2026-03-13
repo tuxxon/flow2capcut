@@ -420,6 +420,36 @@
   border-radius: var(--border-radius);
 }
 
+/* Batch Selector */
+.batch-selector {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-btn {
+  flex: 1;
+  padding: 8px 0;
+  border: 2px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--text-color);
+}
+
+.batch-btn.active {
+  border-color: var(--primary-color);
+  background: rgba(66, 153, 225, 0.15);
+  color: var(--primary-color);
+}
+
 /* Import Modal */
 .import-desc {
   margin-bottom: 16px;

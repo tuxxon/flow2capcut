@@ -13,6 +13,7 @@ export default {
     login: '로그인',
     authenticated: '인증됨',
     checking: '확인 중...',
+    waitingLogin: '로그인 대기 중...',
     language: '언어',
     menu: '메뉴',
   },
@@ -55,7 +56,15 @@ export default {
     generating: '생성중',
     complete: '완료',
     error: '에러',
-    promptPlaceholder: '비디오 프롬프트...',
+    imagePrompt: '🖼️ 이미지 프롬프트',
+    videoPromptLabel: '🎬 비디오 프롬프트',
+    noPrompt: '✏️ 직접 입력',
+    promptPlaceholder: '이미지 생성 프롬프트...',
+    videoPromptPlaceholder: '비디오 탭 프롬프트...',
+    customPromptPlaceholder: '직접 프롬프트를 입력하세요...',
+    autoBatch: '⚡ 전체 배치',
+    autoBatchHint: '이미지가 있는 모든 씬을 프레임 페어로 자동 배치',
+    clickToDetail: '클릭하여 상세 보기',
   },
 
   // Refs to Video 패널
@@ -256,6 +265,18 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     projectName: '프로젝트 이름',
     exportThreshold: '내보내기 버튼 표시 완료율',
     exportThresholdHint: '씬 생성 완료 후, 이 비율 이상 성공 시 내보내기 버튼 표시',
+
+    // 배치 카운트
+    batchSettings: '배치 생성',
+    imageBatchCount: '이미지 배치 카운트',
+    imageBatchHint: 'Flow에서 한 번에 생성할 이미지 수',
+    videoBatchCount: '비디오 배치 카운트',
+    videoBatchHint: 'Flow에서 한 번에 생성할 비디오 수',
+
+    // 비디오 다운로드
+    videoDownloadSettings: '비디오 다운로드',
+    videoResolution: '다운로드 해상도',
+    videoResolutionHint: '비디오 다운로드 시 upscale 해상도 (기본: 1080p)',
 
     // 화면 레이아웃
     layoutMode: '레이아웃',
