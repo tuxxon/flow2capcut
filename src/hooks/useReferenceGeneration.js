@@ -15,6 +15,7 @@ const randomDelay = () => new Promise(r => setTimeout(r, 1000 + Math.random() * 
 export function useReferenceGeneration({ settings, references, setReferences, flowAPI, addPendingSave, openSettings, pendingSavesCount = 0, t, selectedStyleRefId, styleThumbnails }) {
   const [generatingRefs, setGeneratingRefs] = useState([])
   const [stoppingRefs, setStoppingRefs] = useState(false)
+  const [preparingRefs, setPreparingRefs] = useState(false)  // 배치 준비 중 (권한/토큰/썸네일 업로드)
   const [saveFailedOnce, setSaveFailedOnce] = useState(false)  // 배치 중 저장 실패 알림 1회만
   const stopRequestedRef = useRef(false)
   const presetMediaCache = useRef({})  // 프리셋 썸네일 → Flow mediaId 캐시
@@ -94,7 +95,26 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       if (result.success && result.images?.length > 0) {
         // images는 [{ base64, mediaId }] 객체 배열
         const firstImage = result.images[0]
-        const imageData = firstImage.base64 || firstImage  // backward compat
+        let imageData = firstImage.base64 || firstImage  // backward compat
+
+        // 이미지 업스케일 (설정에 따라, style 카드 제외)
+        const upscaleRes = settings.imageUpscale || '2k'
+        const origMediaId = firstImage.mediaId || null
+        if (upscaleRes !== 'off' && origMediaId && ref.type !== 'style') {
+          try {
+            console.log('[Reference] Upscaling image to', upscaleRes, '...')
+            const upResult = await flowAPI.upscaleImage(origMediaId, upscaleRes)
+            if (upResult.success && upResult.data) {
+              imageData = upResult.data
+              console.log('[Reference] Upscale success')
+            } else {
+              console.warn('[Reference] Upscale failed, using original:', upResult.error)
+            }
+          } catch (e) {
+            console.warn('[Reference] Upscale error, using original:', e.message)
+          }
+        }
+
         // data URL prefix 보장 (img src 표시용)
         const displayUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
 
@@ -206,7 +226,106 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     return { success: false }
   }
 
-  // Handle reference image generation (일괄)
+  // ─── 비동기 결과 수집 + 후처리 (업스케일, 업로드, 저장) ───
+  const processAsyncResult = async (generationId, index, ref) => {
+    const result = await flowAPI.collectGeneration(generationId)
+
+    if (!result.success || !result.images?.length) {
+      const errorMsg = result.error || ''
+      const isAuthError = errorMsg.includes('401') || errorMsg.includes('auth') || errorMsg.includes('token')
+      const isServerError = errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503')
+      toast.error(t('toast.generateFailed', { error: result.error || 'Unknown error' }))
+      setGeneratingRefs(prev => prev.filter(i => i !== index))
+      return { success: false, authError: isAuthError, serverError: isServerError }
+    }
+
+    // 이미지 후처리 (handleGenerateRef과 동일)
+    const firstImage = result.images[0]
+    let imageData = firstImage.base64 || firstImage
+
+    // 업스케일 (style 카드 제외)
+    const upscaleRes = settings.imageUpscale || '2k'
+    const origMediaId = firstImage.mediaId || null
+    if (upscaleRes !== 'off' && origMediaId && ref.type !== 'style') {
+      try {
+        console.log('[AsyncRef] Upscaling image to', upscaleRes, '...')
+        const upResult = await flowAPI.upscaleImage(origMediaId, upscaleRes)
+        if (upResult.success && upResult.data) {
+          imageData = upResult.data
+          console.log('[AsyncRef] Upscale success')
+        } else {
+          console.warn('[AsyncRef] Upscale failed, using original:', upResult.error)
+        }
+      } catch (e) {
+        console.warn('[AsyncRef] Upscale error, using original:', e.message)
+      }
+    }
+
+    const displayUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
+
+    // Flow에 업로드 → mediaId + caption
+    const cleanBase64 = imageData.split(',')[1] || imageData
+    let mediaId = null
+    let caption = null
+    try {
+      const uploadResult = await flowAPI.uploadReference(cleanBase64, ref.category)
+      if (uploadResult.success) {
+        mediaId = uploadResult.mediaId
+        caption = uploadResult.caption
+      }
+    } catch (uploadErr) {
+      console.error('[AsyncRef] Upload failed:', uploadErr)
+    }
+
+    // 파일 저장 (폴더 모드)
+    let filePath = null
+    let savedDataUrl = displayUrl
+    if (settings.saveMode === 'folder') {
+      const projectName = settings.projectName || generateProjectName()
+      const refName = ref.name || `ref_${index + 1}`
+      const metadata = { mediaId, caption, category: ref.category }
+      const permission = await fileSystemAPI.ensurePermission()
+
+      let saveResult = { success: false }
+      if (permission.hasPermission) {
+        saveResult = await fileSystemAPI.saveReference(projectName, refName, imageData, 'flow', metadata)
+          .catch(e => ({ success: false, error: e.message }))
+      }
+
+      if (saveResult.success) {
+        filePath = saveResult.path
+        savedDataUrl = saveResult.dataUrl || displayUrl
+      } else {
+        if (!saveFailedOnce) {
+          setSaveFailedOnce(true)
+          toast.warning(t('toast.permissionReleasedMemory'))
+        }
+        addPendingSave(async () => {
+          const pendingSave = await fileSystemAPI.saveReference(projectName, refName, imageData, 'flow', metadata)
+          if (pendingSave.success) {
+            setReferences(prev => prev.map((r, i) =>
+              i === index ? { ...r, filePath: pendingSave.path, dataStorage: 'file' } : r
+            ))
+          }
+          return pendingSave
+        })
+      }
+
+      await fileSystemAPI.saveExtraToHistory(projectName, RESOURCE.REFERENCES, refName, result.images, ref.prompt, 'Reference')
+    }
+
+    // 레퍼런스 업데이트
+    setReferences(prev => prev.map((r, i) =>
+      i === index
+        ? { ...r, data: savedDataUrl, filePath, dataStorage: filePath ? 'file' : 'base64', mediaId, caption }
+        : r
+    ))
+    setGeneratingRefs(prev => prev.filter(i => i !== index))
+    return { success: true, savedToMemory: filePath === null && settings.saveMode === 'folder' }
+  }
+
+  // Handle reference image generation (일괄 — 비동기 fire-and-forget 방식)
+  // AutoFlow 패턴: 제출 → 7~15초 대기 → 다음 제출, 결과는 별도 수집
   const handleGenerateAllRefs = async () => {
     const generatableIndices = references
       .map((ref, index) => (ref.prompt && !ref.data && !ref.filePath && ref.type !== 'style') ? index : -1)
@@ -220,100 +339,171 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     // 배치 시작 - 플래그 리셋
     stopRequestedRef.current = false
     setStoppingRefs(false)
-    let hasPendingSaves = false  // 로컬 변수로 추적 (React state는 비동기라 즉시 반영 안됨)
+    setPreparingRefs(true)  // 즉시 "준비중" 표시
+    let hasPendingSaves = false
     setSaveFailedOnce(false)
 
-    // 폴더 모드일 때 권한 먼저 요청 (사용자 제스처 컨텍스트)
+    // 폴더 모드 권한 확인
     if (settings.saveMode === 'folder') {
       const permission = await fileSystemAPI.ensurePermission()
-      if (permission.error === 'not_set') {
-        openSettings('storage')
-        return
-      }
+      if (permission.error === 'not_set') { setPreparingRefs(false); openSettings('storage'); return }
       if (permission.error === 'folder_deleted') {
         toast.error(t('toast.folderDeleted'))
-        openSettings('storage')
+        setPreparingRefs(false); openSettings('storage')
         return
       }
       if (!permission.hasPermission) {
         toast.warning(t('toast.folderPermissionNeeded'))
-        openSettings('storage')
+        setPreparingRefs(false); openSettings('storage')
         return
       }
       console.log('[GenerateAllRefs] Permission granted:', permission.name)
     }
 
-    // 순차 처리 (API 안정성) - 배치 모드에서는 권한 체크 스킵
+    // 토큰 확인
+    if (!(await checkAuthToken(flowAPI, t))) { setPreparingRefs(false); return }
+
+    // 비동기 대기열
+    const pendingQueue = []  // [{ generationId, index, ref }]
+
+    // 완료된 결과 수집 + 후처리
+    const collectCompleted = async () => {
+      for (let i = pendingQueue.length - 1; i >= 0; i--) {
+        const pending = pendingQueue[i]
+        try {
+          const status = await flowAPI.checkGeneration(pending.generationId)
+          if (status?.success && status.completed) {
+            console.log('[GenerateAllRefs] Collecting completed gen:', pending.generationId, 'index:', pending.index)
+            const result = await processAsyncResult(pending.generationId, pending.index, pending.ref)
+            if (result?.savedToMemory) hasPendingSaves = true
+            pendingQueue.splice(i, 1)
+          }
+        } catch (e) {
+          console.warn('[GenerateAllRefs] Check failed for gen:', pending.generationId, e.message)
+        }
+      }
+    }
+
+    // 스타일 레퍼런스 준비 (공통)
+    const prepareStyleRefs = (ref) => {
+      const styleRefImages = []
+      let styledPrompt = ref.prompt
+      if (ref.type !== 'style' && selectedStyleRefId) {
+        if (selectedStyleRefId.startsWith('ref:')) {
+          const refId = selectedStyleRefId.replace('ref:', '')
+          const styleRef = references.find(r => r.id == refId && r.type === 'style' && r.mediaId)
+          if (styleRef) {
+            styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+          }
+        } else if (selectedStyleRefId.startsWith('preset:')) {
+          const presetId = selectedStyleRefId.replace('preset:', '')
+          const preset = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+          if (styleThumbnails?.[presetId] && presetMediaCache.current[presetId]) {
+            styleRefImages.push({ category: 'style', mediaId: presetMediaCache.current[presetId], caption: preset?.prompt_en || '' })
+          }
+          if (preset?.prompt_en) {
+            styledPrompt = `${ref.prompt}, ${preset.prompt_en}`
+          }
+        }
+      }
+      return { styledPrompt, styleRefImages }
+    }
+
+    // 프리셋 썸네일 사전 업로드 (배치 전에 한 번만)
+    if (selectedStyleRefId?.startsWith('preset:')) {
+      const presetId = selectedStyleRefId.replace('preset:', '')
+      if (styleThumbnails?.[presetId] && !presetMediaCache.current[presetId]) {
+        const thumbData = styleThumbnails[presetId]
+        const cleanBase64 = thumbData.split(',')[1] || thumbData
+        try {
+          const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
+          if (uploadResult.success) {
+            presetMediaCache.current[presetId] = uploadResult.mediaId
+            console.log('[GenerateAllRefs] Preset thumbnail pre-uploaded, mediaId:', uploadResult.mediaId)
+          }
+        } catch (e) {
+          console.warn('[GenerateAllRefs] Preset thumbnail upload failed:', e)
+        }
+      }
+    }
+
+    // ─── Phase 1: 비동기 제출 (fire-and-forget) ───
+    setPreparingRefs(false)  // 준비 완료 → 생성 중으로 전환
+    console.log('[GenerateAllRefs] Starting async batch for', generatableIndices.length, 'refs')
+    let submitFailCount = 0
+
     for (const index of generatableIndices) {
-      // 중단 요청 체크
       if (stopRequestedRef.current) {
         console.log('[GenerateAllRefs] Stop requested by user')
         toast.info(t('toast.batchStopped'))
         break
       }
 
-      let result = await handleGenerateRef(index, true)  // skipPermissionCheck = true
+      // 이전 결과 수집 (완료된 것만)
+      await collectCompleted()
 
-      // 메모리 저장 여부 체크
-      if (result?.savedToMemory) {
-        hasPendingSaves = true
-      }
+      const ref = references[index]
+      const { styledPrompt, styleRefImages } = prepareStyleRefs(ref)
 
-      // 서버 에러 (500 등) 시 최대 3회 재시도
-      if (result?.serverError) {
-        for (let retry = 1; retry <= 3; retry++) {
-          if (stopRequestedRef.current) break
-          console.log(`[GenerateAllRefs] Server error, retry ${retry}/3 after random delay...`)
-          toast.info(t('toast.serverErrorRetry', { retry }))
-          await randomDelay()
-          result = await handleGenerateRef(index, true)
-          if (result?.savedToMemory) hasPendingSaves = true
-          if (result?.success || !result?.serverError) break
-        }
-        // 3회 재시도 후에도 서버 에러면 중단
-        if (result?.serverError) {
-          console.log('[GenerateAllRefs] Server error persists after 3 retries, stopping batch')
+      // 생성 중 표시
+      setGeneratingRefs(prev => [...prev, index])
+
+      // 비동기 제출
+      const submitResult = await flowAPI.submitGenerationDOM(styledPrompt, styleRefImages, { batchCount: settings.imageBatchCount })
+
+      if (submitResult?.success && submitResult.generationId) {
+        pendingQueue.push({ generationId: submitResult.generationId, index, ref })
+        console.log('[GenerateAllRefs] Submitted index:', index, 'gen:', submitResult.generationId)
+        submitFailCount = 0
+      } else {
+        console.warn('[GenerateAllRefs] Submit failed for index:', index, submitResult?.error)
+        setGeneratingRefs(prev => prev.filter(i => i !== index))
+        submitFailCount++
+
+        // 연속 3회 실패 시 중단
+        if (submitFailCount >= 3) {
           toast.error(t('toast.serverErrorPersist'))
           break
         }
       }
 
-      // 인증 에러 시 토큰 갱신 시도 후 재시도
-      if (result?.authError) {
-        console.log('[GenerateAllRefs] Auth error detected, trying to refresh token...')
-        toast.info(t('toast.tokenRefreshing'))
-
-        // 토큰 갱신 시도
-        const newToken = await flowAPI.getAccessToken(true)
-        if (newToken) {
-          console.log('[GenerateAllRefs] Token refreshed, retrying index:', index)
-          // 같은 인덱스 재시도
-          const retryResult = await handleGenerateRef(index, true)
-          if (retryResult?.savedToMemory) hasPendingSaves = true
-          if (!retryResult?.authError) {
-            // 재시도 성공 - 다음으로 진행
-            continue
-          }
-        }
-        // 토큰 갱신 실패 또는 재시도 실패 - 중단
-        console.log('[GenerateAllRefs] Auth error persists, stopping batch')
-        toast.error(t('toast.authErrorStop'))
-        break
-      }
-
-      // 랜덤 딜레이 (1~3초)
+      // AutoFlow 스타일 대기 (7~15초) — 마지막이 아닐 때만
       if (index !== generatableIndices[generatableIndices.length - 1]) {
-        await randomDelay()
+        const delay = 7000 + Math.random() * 8000
+        console.log('[GenerateAllRefs] Waiting', Math.round(delay / 1000), 's before next submit...')
+        await new Promise(r => setTimeout(r, delay))
       }
     }
 
-    // 완료 - pending saves가 있으면 권한 요청 안내
-    console.log('[GenerateAllRefs] Batch completed, hasPendingSaves:', hasPendingSaves)
+    // ─── Phase 2: 남은 결과 전부 수집 (폴링) ───
+    console.log('[GenerateAllRefs] All submitted. Waiting for', pendingQueue.length, 'remaining results...')
+    const maxWait = 180000  // 최대 3분 대기
+    const pollStart = Date.now()
 
-    // 중단 상태 해제
+    while (pendingQueue.length > 0 && Date.now() - pollStart < maxWait) {
+      if (stopRequestedRef.current) {
+        console.log('[GenerateAllRefs] Stop requested during collection')
+        toast.info(t('toast.batchStopped'))
+        break
+      }
+      await new Promise(r => setTimeout(r, 3000))  // 3초 간격 폴링
+      await collectCompleted()
+    }
+
+    // 미수집 항목 정리
+    if (pendingQueue.length > 0) {
+      console.warn('[GenerateAllRefs] Timed out waiting for', pendingQueue.length, 'generations')
+      for (const pending of pendingQueue) {
+        setGeneratingRefs(prev => prev.filter(i => i !== pending.index))
+      }
+    }
+
+    // 일괄 정리
+    await flowAPI.clearGenerations()
+
+    console.log('[GenerateAllRefs] Batch completed, hasPendingSaves:', hasPendingSaves)
     setStoppingRefs(false)
 
-    // pending saves가 있으면 설정창 열어서 권한 요청 유도
     if (hasPendingSaves) {
       toast.info(t('toast.batchCompleteNeedPermission'))
       openSettings('storage')
@@ -323,6 +513,7 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
   return {
     generatingRefs,
     stoppingRefs,
+    preparingRefs,
     handleGenerateRef,
     handleGenerateAllRefs,
     stopGenerateAllRefs

@@ -49,6 +49,46 @@
   opacity: 0.6;
 }
 
+/* 검색 */
+.sp-search {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sp-search-input {
+  width: 100%;
+  padding: 6px 30px 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-size: 0.8rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sp-search-input:focus {
+  border-color: #a855f7;
+}
+
+.sp-search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.sp-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+}
+
 /* 업로드된 스타일 섹션 */
 .sp-uploaded-section {
   margin-bottom: 4px;

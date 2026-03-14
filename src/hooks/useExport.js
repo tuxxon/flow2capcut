@@ -39,6 +39,7 @@ export function useExport({
   videoScenes = [],
   framePairs = [],
   openSettings,
+  audioPackage = null,
   isAuthenticated,
   subscription,
   onLoginRequired,
@@ -158,7 +159,8 @@ export function useExport({
         kenBurnsCycle,
         kenBurnsScaleMin,
         kenBurnsScaleMax,
-        subtitleOption
+        subtitleOption,
+        audioPackage
       })
 
       if (!result.success) {

@@ -160,6 +160,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     generateAll: 'Generate All',
     stop: 'Stop',
     stopping: 'Stopping',
+    preparing: 'Preparing...',
     noStyle: 'No Style',
     styleRefHint: 'Select style reference to apply during generation',
     batchWizardTitle: 'Batch Generate',
@@ -299,6 +300,14 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     videoBatchCount: 'Video Batch Count',
     videoBatchHint: 'Number of videos to generate per request in Flow',
 
+    // Image upscale
+    imageUpscaleSettings: 'Image Upscale',
+    imageUpscale: 'Upscale Resolution',
+    imageUpscaleHint: 'Auto-upscale after image generation (default: 2K)',
+    imageUpscaleOff: 'OFF',
+    imageUpscale2k: '2K',
+    imageUpscale4k: '4K',
+
     // Video download
     videoDownloadSettings: 'Video Download',
     videoResolution: 'Download Resolution',
@@ -352,6 +361,16 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     wrongTypeSrt: 'This file is an SRT subtitle file.\nImport as SRT instead?',
     wrongTypeCsv: 'This file is a CSV file.\nImport as Scene CSV instead?',
     wrongTypeText: 'This file is plain text.\nImport as prompts instead?',
+    audioTitle: 'Audio Package',
+    audioDesc: 'Voice + SFX for CapCut multitrack',
+    audioHint: 'footage/ + voice_samples/ + sfx/',
+  },
+
+  // Audio Import
+  audioImport: {
+    electronRequired: 'Available only in Electron desktop version.',
+    scanFailed: 'Audio package scan failed: {error}',
+    scanSuccess: 'Audio package loaded!\nCharacters: {characters}\n{voiceCount} voice files, {sfxCount} SFX categories',
   },
   
   // History

@@ -327,11 +327,11 @@ export function resolveImageSrc(item) {
   // 파일 경로 우선 (scene.imagePath 또는 reference.filePath) — 절대 경로만
   const filePath = item.imagePath || item.filePath
   if (filePath && filePath.startsWith('/')) {
-    return `file://${filePath}`
+    return `file://${filePath}?t=${Date.now()}`
   }
   // Windows 절대 경로 (C:\...)
   if (filePath && /^[A-Z]:\\/i.test(filePath)) {
-    return `file:///${filePath.replace(/\\/g, '/')}`
+    return `file:///${filePath.replace(/\\/g, '/')}?t=${Date.now()}`
   }
   // fallback: 메모리 base64 (scene.image 또는 reference.data)
   return item.image || item.data || null

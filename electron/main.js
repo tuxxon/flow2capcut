@@ -61,7 +61,8 @@ let layoutMode = 'split-left' // 'split-left' | 'split-right' | 'split-top' | 's
 let splitRatio = 0.5   // 0.2 ~ 0.8
 let modalVisible = false // 모달이 열려있으면 Flow 뷰를 숨김 (네이티브 뷰는 CSS z-index로 가릴 수 없음)
 let capturedProjectId = null // Flow 네트워크에서 자동 캡처된 projectId
-let pendingGeneration = null // DOM-triggered generation 응답 캡처용 Promise resolver (이미지)
+let pendingGeneration = null // DOM-triggered generation 응답 캡처용 Promise resolver (이미지) — 동기 모드
+const pendingGenerations = new Map() // 비동기 모드용 다중 생성 추적 (key: generationId)
 let pendingVideoGeneration = null // DOM-triggered video generation 응답 캡처용 Promise resolver
 let pendingReferenceImages = null // CDP Fetch 인터셉션용 레퍼런스 이미지 (mediaId 배열)
 let pendingI2VInjection = null // CDP Fetch 인터셉션용 I2V startImage 주입 데이터
@@ -622,6 +623,33 @@ function createWindow() {
         }
       }
 
+      // 네트워크 요청 실패 → 비동기 모드 (pendingGenerations Map)
+      if (method === 'Network.loadingFailed' && pendingGenerations.size > 0) {
+        const reqUrl = requestUrlMap[params.requestId] || ''
+        const failMethod = requestMethodMap[params.requestId] || ''
+        if (reqUrl.includes('batchGenerateImages') && failMethod !== 'OPTIONS') {
+          const reqSentAt = requestSentTimeMap[params.requestId] || 0
+          let matchId = null
+          let matchSetAt = -Infinity
+          for (const [id, gen] of pendingGenerations) {
+            if (!gen.completed && gen.setAt <= reqSentAt && gen.setAt > matchSetAt) {
+              matchId = id
+              matchSetAt = gen.setAt
+            }
+          }
+          if (matchId) {
+            const g = pendingGenerations.get(matchId)
+            g.responses.push({ error: true, message: params.errorText || 'Network request failed' })
+            console.error('[Flow API] [AsyncCapture] batchGenerateImages FAILED for gen:',
+              matchId.substring(0, 8), '(' + g.responses.length + '/' + g.expectedCount + ')')
+            if (g.responses.length >= g.expectedCount) {
+              g.completed = true
+              if (g.collectionTimer) clearTimeout(g.collectionTimer)
+            }
+          }
+        }
+      }
+
       // 비디오 API 요청 실패 처리
       if (method === 'Network.loadingFailed' && pendingVideoGeneration) {
         const reqUrl = requestUrlMap[params.requestId] || ''
@@ -700,6 +728,62 @@ function createWindow() {
                 }
               }
             })
+        }
+        // batchGenerateImages 응답 → 비동기 모드 (pendingGenerations Map)
+        else if (pendingGenerations.size > 0 && reqUrl.includes('batchGenerateImages') && reqMethod !== 'OPTIONS') {
+          const reqSentAt = requestSentTimeMap[params.requestId] || 0
+          // 타임스탬프 기반 매칭: reqSentAt >= gen.setAt인 것 중 가장 늦은(가장 가까운) generation
+          let matchId = null
+          let matchSetAt = -Infinity
+          for (const [id, gen] of pendingGenerations) {
+            if (!gen.completed && gen.setAt <= reqSentAt && gen.setAt > matchSetAt) {
+              matchId = id
+              matchSetAt = gen.setAt
+            }
+          }
+          if (matchId) {
+            const gen = pendingGenerations.get(matchId)
+            console.log('[Flow API] [AsyncCapture] ✅ batchGenerateImages → gen:', matchId.substring(0, 8),
+              '(reqSentAt:', reqSentAt.toFixed(3), ', setAt:', gen.setAt.toFixed(3), ')')
+            flowView.webContents.debugger.sendCommand('Network.getResponseBody', { requestId: params.requestId })
+              .then(result => {
+                if (result?.body && pendingGenerations.has(matchId)) {
+                  const g = pendingGenerations.get(matchId)
+                  g.responses.push({ error: false, body: result.body, status: httpStatus })
+                  console.log('[Flow API] [AsyncCapture] Response collected (' +
+                    g.responses.length + '/' + g.expectedCount + ') for gen:', matchId.substring(0, 8))
+                  if (g.responses.length >= g.expectedCount) {
+                    g.completed = true
+                    if (g.collectionTimer) clearTimeout(g.collectionTimer)
+                    console.log('[Flow API] [AsyncCapture] Generation COMPLETED:', matchId.substring(0, 8))
+                  } else {
+                    // 30초 타이머
+                    if (g.collectionTimer) clearTimeout(g.collectionTimer)
+                    g.collectionTimer = setTimeout(() => {
+                      if (pendingGenerations.has(matchId)) {
+                        const gg = pendingGenerations.get(matchId)
+                        if (!gg.completed) {
+                          gg.completed = true
+                          console.log('[Flow API] [AsyncCapture] Timer fired — marking completed with',
+                            gg.responses.length, '/', gg.expectedCount, 'for gen:', matchId.substring(0, 8))
+                        }
+                      }
+                    }, 30000)
+                  }
+                }
+              })
+              .catch(err => {
+                console.warn('[Flow API] [AsyncCapture] getResponseBody failed:', err.message)
+                if (pendingGenerations.has(matchId)) {
+                  const g = pendingGenerations.get(matchId)
+                  g.responses.push({ error: true, message: err.message })
+                  if (g.responses.length >= g.expectedCount) {
+                    g.completed = true
+                    if (g.collectionTimer) clearTimeout(g.collectionTimer)
+                  }
+                }
+              })
+          }
         }
         // 비디오 API 응답 캡처 (DOM-triggered video generation)
         else if (pendingVideoGeneration && reqUrl.includes('batchAsyncGenerateVideo') && reqMethod !== 'OPTIONS') {
@@ -875,6 +959,7 @@ const flowAPIDeps = {
   setCapturedProjectId: (v) => { capturedProjectId = v },
   getPendingGeneration: () => pendingGeneration,
   setPendingGeneration: (v) => { pendingGeneration = v },
+  pendingGenerations,  // 비동기 모드용 Map (직접 참조)
   getPendingReferenceImages: () => pendingReferenceImages,
   setPendingReferenceImages: (v) => { pendingReferenceImages = v },
   getEnterToolClicked: () => enterToolClicked,

@@ -15,6 +15,7 @@ import { useReferenceGeneration } from './hooks/useReferenceGeneration'
 import { useStyleThumbnails } from './hooks/useStyleThumbnails'
 import { useSceneGeneration } from './hooks/useSceneGeneration'
 import { useExport } from './hooks/useExport'
+import { useAudioImport } from './hooks/useAudioImport'
 import { generateProjectName } from './utils/formatters'
 import { detectFileType, detectCSVType } from './utils/parsers'
 import { checkFolderPermission } from './utils/guards'
@@ -170,7 +171,7 @@ function App() {
   const { thumbnails: styleThumbnails, generating: thumbnailGenerating, stopping: thumbnailStopping, progress: thumbnailProgress, generateThumbnails, stopGenerating: stopThumbnailGeneration, deleteThumbnail } = useStyleThumbnails(flowAPI)
 
   // Reference 생성
-  const { generatingRefs, stoppingRefs, handleGenerateRef, handleGenerateAllRefs, stopGenerateAllRefs } = useReferenceGeneration({
+  const { generatingRefs, stoppingRefs, preparingRefs, handleGenerateRef, handleGenerateAllRefs, stopGenerateAllRefs } = useReferenceGeneration({
     settings, references, setReferences, flowAPI, addPendingSave, openSettings, t, selectedStyleRefId, styleThumbnails
   })
 
@@ -179,9 +180,13 @@ function App() {
     settings, scenes, scenesHook, flowAPI, openSettings, setSelectedScene, t
   })
 
+  // Audio Import
+  const { audioPackage, audioTracks, importing: audioImporting, importAudioPackage, clearAudioPackage } = useAudioImport(t)
+
   // Export
   const { showExportModal, setShowExportModal, exporting, exportPhase, handleExportClick, handleExportConfirm } = useExport({
     settings, scenes, videoScenes, framePairs, openSettings,
+    audioPackage,
     isAuthenticated,
     subscription,
     onLoginRequired: () => setShowAuthModal(true),
@@ -391,6 +396,7 @@ function App() {
           saveMode: settings.saveMode,
           concurrency: settings.concurrency || 2,
           imageBatchCount: settings.imageBatchCount || 1,
+          imageUpscale: settings.imageUpscale || '2k',
         }
 
         const errors = collectTagErrors(scenes, scenesHook.references)
@@ -654,6 +660,7 @@ function App() {
             onClearAll={() => setReferences([])}
             generatingRefs={generatingRefs}
             stoppingRefs={stoppingRefs}
+            preparingRefs={preparingRefs}
             selectedStyleRefId={selectedStyleRefId}
             onStyleRefChange={setSelectedStyleRefId}
             projectName={settings.projectName}
@@ -890,6 +897,7 @@ function App() {
       {showImport && (
         <ImportModal
           onImport={handleImport}
+          onImportAudio={importAudioPackage}
           onClose={() => setShowImport(false)}
         />
       )}

@@ -23,6 +23,7 @@ export default function ReferencePanel({
   aspectRatio = '16:9',
   generatingRefs = [],
   stoppingRefs = false,
+  preparingRefs = false,
   selectedStyleRefId,
   onStyleRefChange,
   projectName,
@@ -38,6 +39,13 @@ export default function ReferencePanel({
   const [collapsed, setCollapsed] = useState(false)
   const [detailIndex, setDetailIndex] = useState(null)
   const [showBatchWizard, setShowBatchWizard] = useState(false)
+  const [batchTotal, setBatchTotal] = useState(0)
+  const [batchStartedAt, setBatchStartedAt] = useState(null)
+  const [batchElapsed, setBatchElapsed] = useState(0)
+
+  // 생성 가능한 레퍼런스 (프롬프트 있고, 이미지 없음, 스타일 제외)
+  const generatableRefs = references.filter(r => r.prompt && !r.data && !r.filePath && r.type !== 'style')
+  const isGenerating = generatingRefs.length > 0
 
   // 위저드 열릴 때 Flow 네이티브 뷰 숨기기
   useEffect(() => {
@@ -45,6 +53,25 @@ export default function ReferencePanel({
     window.electronAPI?.setModalVisible?.({ visible: true })
     return () => window.electronAPI?.setModalVisible?.({ visible: false })
   }, [showBatchWizard])
+
+  // 일괄생성 시작/종료 감지 + 경과 시간 타이머
+  useEffect(() => {
+    if (isGenerating && !batchStartedAt) {
+      setBatchTotal(generatableRefs.length + generatingRefs.length)
+      setBatchStartedAt(Date.now())
+      setBatchElapsed(0)
+    } else if (!isGenerating && batchStartedAt) {
+      setBatchStartedAt(null)
+    }
+  }, [isGenerating])
+
+  useEffect(() => {
+    if (!batchStartedAt) return
+    const timer = setInterval(() => {
+      setBatchElapsed(Date.now() - batchStartedAt)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [batchStartedAt])
 
   // 스타일 레퍼런스 목록 (업로드된 Style 카드)
   const styleRefs = references.filter(r => r.type === 'style' && r.mediaId)
@@ -80,10 +107,6 @@ export default function ReferencePanel({
   }
   
   const ratioClass = getRatioClass(aspectRatio)
-  
-  // 생성 가능한 레퍼런스 (프롬프트 있고, 이미지 없음, 스타일 제외)
-  const generatableRefs = references.filter(r => r.prompt && !r.data && !r.filePath && r.type !== 'style')
-  const isGenerating = generatingRefs.length > 0
 
   const handleClearAll = () => {
     if (window.confirm(t('reference.clearConfirm'))) {
@@ -108,6 +131,21 @@ export default function ReferencePanel({
         
         {!collapsed && (
           <div className="ref-header-actions">
+            {/* 진행바 (생성 중일 때) - 삭제/생성 버튼 앞에 표시 */}
+            {isGenerating && (
+              <div className="ref-batch-progress">
+                <div className="ref-batch-bar">
+                  <div
+                    className="ref-batch-fill"
+                    style={{ width: `${batchTotal > 0 ? ((batchTotal - generatableRefs.length) / batchTotal) * 100 : 0}%` }}
+                  />
+                </div>
+                <span className="ref-batch-text">
+                  {batchTotal - generatableRefs.length}/{batchTotal}
+                  {batchElapsed > 0 && ` · ${Math.floor(batchElapsed / 60000)}:${String(Math.floor((batchElapsed / 1000) % 60)).padStart(2, '0')}`}
+                </span>
+              </div>
+            )}
             {/* Clear All 버튼 */}
             {references.length > 0 && (
               <button
@@ -119,17 +157,21 @@ export default function ReferencePanel({
                 🗑️
               </button>
             )}
-            {/* 일괄 생성 / 중단 버튼 */}
-            {isGenerating ? (
+            {/* 일괄 생성 / 준비중 / 중단 버튼 */}
+            {preparingRefs ? (
+              <button
+                className="btn-generate-all btn-preparing"
+                disabled
+              >
+                ⏳ {t('reference.preparing')}
+              </button>
+            ) : isGenerating ? (
               <button
                 className={`btn-generate-all btn-stop ${stoppingRefs ? 'stopping' : ''}`}
                 onClick={onStopGenerateAll}
                 disabled={stoppingRefs}
               >
-                {stoppingRefs
-                  ? `⏳ ${t('reference.stopping')}...`
-                  : `⏹ ${t('reference.stop')} (${generatingRefs.length}/${generatableRefs.length + generatingRefs.length})`
-                }
+                {stoppingRefs ? `⏳ ${t('reference.stopping')}...` : `⏹ ${t('reference.stop')}`}
               </button>
             ) : generatableRefs.length > 0 && (
               <button

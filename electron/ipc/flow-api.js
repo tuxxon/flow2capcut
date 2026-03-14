@@ -20,6 +20,7 @@ export function registerFlowAPIIPC(ipcMain, deps) {
     extractBase64Images, fetchMediaAsBase64, configureFlowMode,
     getCapturedProjectId, setCapturedProjectId,
     getPendingGeneration, setPendingGeneration,
+    pendingGenerations,
     getPendingReferenceImages, setPendingReferenceImages,
     getEnterToolClicked, setEnterToolClicked,
     SESSION_URL, TOKEN_INFO_URL, FLOW_URL, MEDIA_REDIRECT_URL, UPLOAD_URL,
@@ -120,7 +121,8 @@ export function registerFlowAPIIPC(ipcMain, deps) {
 
   // Generate image via Flow API
   ipcMain.handle('flow:generate-image', async (event, {
-    token, prompt, aspectRatio, seed, model, projectId, referenceImages, batchCount
+    token, prompt, aspectRatio, seed, model, projectId, referenceImages, batchCount,
+    asyncMode  // true: 제출만 하고 즉시 반환 (비동기 배치용)
   }) => {
     console.log('[Flow API] generate-image:', { prompt: prompt?.substring(0, 50), model, aspectRatio })
     if (!prompt) return { success: false, error: 'No prompt' }
@@ -285,22 +287,25 @@ export function registerFlowAPIIPC(ipcMain, deps) {
         }
       }
 
-      // 1. 네트워크 응답 캡처 Promise 설정
+      // 1. 네트워크 응답 캡처 Promise 설정 (동기 모드만)
       // ★ pendingGeneration은 Generate 버튼 클릭 직후에 설정한다!
       //   프롬프트 주입 시 Slate의 input/change 이벤트가 Flow 자동생성을 트리거할 수 있음.
       //   pendingGeneration을 미리 설정하면 자동생성 응답이 캡처되고,
       //   실제 버튼 클릭의 응답은 무시되는 문제가 발생한다.
       let resolveGeneration = null
       let generationTimeout = null
-      const responsePromise = new Promise((resolve) => {
-        generationTimeout = setTimeout(() => {
-          if (getPendingGeneration()) {
-            setPendingGeneration(null)
-            resolve({ error: true, message: 'Response timeout (120s)' })
-          }
-        }, 120000)
-        resolveGeneration = resolve
-      })
+      let responsePromise = null
+      if (!asyncMode) {
+        responsePromise = new Promise((resolve) => {
+          generationTimeout = setTimeout(() => {
+            if (getPendingGeneration()) {
+              setPendingGeneration(null)
+              resolve({ error: true, message: 'Response timeout (120s)' })
+            }
+          }, 120000)
+          resolveGeneration = resolve
+        })
+      }
 
       // 2. 기존 blob URL 스냅샷 (fallback용)
       let existingBlobs = []
@@ -599,28 +604,45 @@ export function registerFlowAPIIPC(ipcMain, deps) {
         return { success: false, error: clickResult?.error || 'Failed to click Generate button' }
       }
 
-      // ★ Generate 버튼 클릭 성공 직후 즉시 pendingGeneration 설정!
+      // ★ Generate 버튼 클릭 성공 직후 즉시 pending 설정!
       //   버튼 클릭이 batchGenerateImages 요청을 트리거하므로,
       //   expectedImageCount 감지 전에 먼저 설정해야 CDP 핸들러가 응답을 캡처할 수 있다.
       //   2초 버퍼: 클릭과 네트워크 요청 사이의 wallTime 차이를 보정
       const generationSetAt = Date.now() / 1000 - 2  // 2초 전부터 유효 (stale 필터 보정)
-      setPendingGeneration({
-        setAt: generationSetAt,
-        expectedCount: 1,              // 기본값 1, 아래에서 업데이트
-        responses: [],
-        collectionTimer: null,
-        resolve: (result) => {
-          clearTimeout(generationTimeout)
-          const pg = getPendingGeneration()
-          if (pg?.collectionTimer) clearTimeout(pg.collectionTimer)
-          resolveGeneration(result)
-        }
-      })
-      console.log('[Flow API] [DOM+Net] pendingGeneration set IMMEDIATELY after click (setAt:',
-        generationSetAt.toFixed(3), ')')
+      let generationId = null  // 비동기 모드에서만 사용
+
+      if (asyncMode) {
+        // === 비동기 모드: pendingGenerations Map에 등록 ===
+        generationId = `gen-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+        pendingGenerations.set(generationId, {
+          setAt: generationSetAt,
+          expectedCount: 1,
+          responses: [],
+          collectionTimer: null,
+          completed: false,
+          token  // 나중에 이미지 fetch용
+        })
+        console.log('[Flow API] [Async] pendingGenerations set:', generationId,
+          '(setAt:', generationSetAt.toFixed(3), ')')
+      } else {
+        // === 동기 모드: 기존 pendingGeneration 설정 ===
+        setPendingGeneration({
+          setAt: generationSetAt,
+          expectedCount: 1,
+          responses: [],
+          collectionTimer: null,
+          resolve: (result) => {
+            clearTimeout(generationTimeout)
+            const pg = getPendingGeneration()
+            if (pg?.collectionTimer) clearTimeout(pg.collectionTimer)
+            resolveGeneration(result)
+          }
+        })
+        console.log('[Flow API] [DOM+Net] pendingGeneration set IMMEDIATELY after click (setAt:',
+          generationSetAt.toFixed(3), ')')
+      }
 
       // 예상 이미지 개수 감지 (x1/x2/x3/x4 선택 버튼에서)
-      // pendingGeneration 설정 후에 실행 → expectedCount만 업데이트
       let expectedImageCount = 1
       try {
         expectedImageCount = await flowView.webContents.executeJavaScript(`
@@ -632,7 +654,6 @@ export function registerFlowAPIIPC(ipcMain, deps) {
               for (const btn of countBtns) {
                 const style = getComputedStyle(btn);
                 const bg = style.backgroundColor;
-                // 선택된 버튼은 밝은 배경색 (비선택은 투명 또는 어두운 색)
                 const isSelected = btn.getAttribute('aria-pressed') === 'true'
                   || btn.getAttribute('aria-selected') === 'true'
                   || btn.classList.contains('selected')
@@ -644,7 +665,6 @@ export function registerFlowAPIIPC(ipcMain, deps) {
                   return parseInt(btn.textContent.trim().replace('x', ''));
                 }
               }
-              // fallback: 첫 번째 countBtn의 부모에서 aria/data 속성 체크
               console.log('[DOM] Count buttons found but no selected state detected, checking generate button text');
             }
 
@@ -666,7 +686,24 @@ export function registerFlowAPIIPC(ipcMain, deps) {
         expectedImageCount = 1
       }
 
-      // expectedCount 업데이트 (pendingGeneration이 이미 설정된 상태)
+      // expectedCount 업데이트
+      if (asyncMode) {
+        const ag = pendingGenerations.get(generationId)
+        if (ag) ag.expectedCount = expectedImageCount
+        console.log('[Flow API] [Async] expectedCount updated to', expectedImageCount,
+          'for gen:', generationId)
+
+        // 비동기 모드: Fetch 인터셉션 정리 후 즉시 반환
+        await new Promise(r => setTimeout(r, 2000))  // 요청이 나갈 시간 확보
+        if (cdpFetchEnabled) {
+          setPendingReferenceImages(null)
+          try { await flowView.webContents.debugger.sendCommand('Fetch.disable') } catch {}
+          cdpFetchEnabled = false
+        }
+        return { success: true, generationId, submitted: true }
+      }
+
+      // === 동기 모드: 기존 대기 로직 ===
       const pg = getPendingGeneration()
       if (pg) {
         pg.expectedCount = expectedImageCount
@@ -811,6 +848,104 @@ export function registerFlowAPIIPC(ipcMain, deps) {
         }
       }
     }
+  })
+
+  // ─── 비동기 생성 결과 조회 (폴링용) ───
+  ipcMain.handle('flow:check-generation', async (event, { generationId }) => {
+    if (!generationId) return { success: false, error: 'No generationId' }
+    const gen = pendingGenerations.get(generationId)
+    if (!gen) return { success: false, error: 'Generation not found', notFound: true }
+    return {
+      success: true,
+      completed: gen.completed,
+      responseCount: gen.responses.length,
+      expectedCount: gen.expectedCount
+    }
+  })
+
+  // ─── 비동기 생성 결과 수집 + 파싱 (완료 후 호출) ───
+  ipcMain.handle('flow:collect-generation', async (event, { generationId, token }) => {
+    if (!generationId) return { success: false, error: 'No generationId' }
+    const gen = pendingGenerations.get(generationId)
+    if (!gen) return { success: false, error: 'Generation not found', notFound: true }
+    if (!gen.completed) return { success: false, error: 'Generation not completed yet' }
+
+    // 타이머 정리 + Map에서 제거
+    if (gen.collectionTimer) clearTimeout(gen.collectionTimer)
+    pendingGenerations.delete(generationId)
+
+    console.log('[Flow API] [AsyncCollect] Parsing results for gen:', generationId,
+      'responses:', gen.responses.length)
+
+    // 응답 파싱 (flow:generate-image 동기 모드와 동일한 로직)
+    const successResponses = gen.responses.filter(r => !r.error)
+    const failedCount = gen.responses.filter(r => r.error).length
+    const allImages = []
+    const allErrors = []
+
+    const useToken = token || gen.token || null
+
+    for (const resp of successResponses) {
+      const data = parseFlowResponse(resp.body)
+      if (!data) { allErrors.push('Failed to parse response'); continue }
+      if (data.error) { allErrors.push(data.error.message || JSON.stringify(data.error)); continue }
+
+      // base64 이미지 직접 추출
+      const base64Images = extractBase64Images(data)
+      if (base64Images.length > 0) { allImages.push(...base64Images); continue }
+
+      // fifeUrl 직접 다운로드
+      const fifeResults = extractFifeUrls(data)
+      if (fifeResults.length > 0) {
+        for (const { fifeUrl, mediaId } of fifeResults) {
+          try {
+            const res = await sessionFetch(fifeUrl)
+            if (!res.ok) throw new Error(`fifeUrl fetch HTTP ${res.status}`)
+            const buffer = await res.arrayBuffer()
+            const base64Raw = Buffer.from(buffer).toString('base64')
+            const contentType = res.headers.get('content-type') || 'image/png'
+            allImages.push({ base64: `data:${contentType};base64,${base64Raw}`, mediaId })
+          } catch (fifeErr) {
+            allErrors.push(fifeErr.message)
+          }
+        }
+        if (allImages.length > 0) continue
+      }
+
+      // mediaId fallback
+      const mediaIds = extractMediaIds(data)
+      if (mediaIds.length > 0 && useToken) {
+        for (const id of mediaIds) {
+          try {
+            const base64 = await fetchMediaAsBase64(useToken, id)
+            allImages.push({ base64, mediaId: id })
+          } catch (fetchErr) {
+            allErrors.push(fetchErr.message)
+          }
+        }
+        continue
+      }
+      allErrors.push('No images in response')
+    }
+
+    console.log('[Flow API] [AsyncCollect] Total images:', allImages.length,
+      '(errors:', allErrors.length, ', failed:', failedCount, ')')
+
+    if (allImages.length > 0) {
+      return { success: true, images: allImages }
+    }
+    return { success: false, error: allErrors.join('; ') || 'No images generated' }
+  })
+
+  // ─── 비동기 생성 일괄 정리 (배치 종료 시) ───
+  ipcMain.handle('flow:clear-generations', async () => {
+    for (const [id, gen] of pendingGenerations) {
+      if (gen.collectionTimer) clearTimeout(gen.collectionTimer)
+    }
+    const count = pendingGenerations.size
+    pendingGenerations.clear()
+    console.log('[Flow API] [AsyncClear] Cleared', count, 'pending generations')
+    return { success: true, cleared: count }
   })
 
   // Fetch media by ID (mediaId → redirect → base64)
@@ -1388,6 +1523,370 @@ export function registerFlowAPIIPC(ipcMain, deps) {
     } catch (e) {
       console.error('[Gallery] Error:', e.message)
       return { success: false, error: e.message, items: [] }
+    }
+  })
+
+  // ─── Image Upscale (DOM 방식: three-dots → download → 해상도 선택 → 파일 캡처) ───
+  // 비디오 DOM 다운로드와 동일한 패턴. Flow UI가 reCAPTCHA를 내부적으로 처리.
+  ipcMain.handle('flow:upscale-image', async (event, { token, mediaId, projectId, resolution }) => {
+    const flowView = getFlowView()
+    if (!flowView) return { success: false, error: 'Flow view not ready' }
+    if (!mediaId) return { success: false, error: 'No mediaId' }
+
+    const normalizedRes = String(resolution || '2k').toLowerCase()
+    const resText = normalizedRes === '4k' ? '4K' : '2K'
+
+    console.log('[Flow Image Upscale] Starting DOM upscale — mediaId:', mediaId?.substring(0, 30), 'resolution:', resText)
+
+    try {
+      const fs = await import('node:fs')
+      const os = await import('node:os')
+
+      // Step 1: CDP로 다운로드 경로 설정 (save dialog 스킵)
+      const tempDir = path.join(os.tmpdir(), `flow-img-up-${Date.now()}`)
+      fs.mkdirSync(tempDir, { recursive: true })
+      console.log('[Flow Image Upscale] Download dir:', tempDir)
+
+      try {
+        await flowView.webContents.debugger.sendCommand('Page.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: tempDir
+        })
+      } catch (cdpErr) {
+        try {
+          await flowView.webContents.debugger.sendCommand('Browser.setDownloadBehavior', {
+            behavior: 'allow',
+            downloadPath: tempDir,
+            eventsEnabled: true
+          })
+        } catch {}
+      }
+
+      // Step 2: DOM 자동화 — 이미지 hover → three-dots → download → 해상도 선택
+      const domResult = await flowView.webContents.executeJavaScript(`
+        (async function() {
+          const LOG = (msg) => console.log('[ImageUpscale] ' + msg)
+          const mediaId = ${JSON.stringify(mediaId)}
+          const resText = ${JSON.stringify(resText)}
+
+          // --- Helpers (flow:dom-download-video와 동일) ---
+          function pointerClick(el) {
+            if (!el) return
+            const rect = el.getBoundingClientRect()
+            const x = rect.left + rect.width / 2
+            const y = rect.top + rect.height / 2
+            const pOpts = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', isPrimary: true }
+            el.dispatchEvent(new PointerEvent('pointerdown', pOpts))
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }))
+            el.dispatchEvent(new PointerEvent('pointerup', pOpts))
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }))
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }))
+          }
+
+          async function waitForMenu(ms = 2000) {
+            const t0 = Date.now()
+            while (Date.now() - t0 < ms) {
+              const m = document.querySelector("[data-radix-menu-content][data-state='open'], [role='menu'][data-state='open']")
+              if (m) return m
+              await new Promise(r => setTimeout(r, 80))
+            }
+            return null
+          }
+
+          async function closeMenus() {
+            for (let i = 0; i < 3; i++) {
+              if (!document.querySelector("[data-radix-menu-content][data-state='open'], [role='menu'][data-state='open']")) break
+              document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true, composed: true }))
+              await new Promise(r => setTimeout(r, 150))
+            }
+          }
+
+          const ICON_SEL = "i, .material-symbols, .material-symbols-outlined, .google-symbols, [class*='material-symbols']"
+
+          function findImageElement(uuid) {
+            if (!uuid) return null
+            for (const el of document.querySelectorAll('img[src]')) {
+              const src = el.getAttribute('src') || ''
+              const resolved = el.src || ''
+              if (src.includes(uuid) || resolved.includes(uuid)) return el
+            }
+            return null
+          }
+
+          function findTileWithOverlay(mediaEl) {
+            if (!mediaEl) return null
+            let node = mediaEl.parentElement
+            for (let i = 0; i < 10 && node; i++) {
+              if (Array.from(node.querySelectorAll(ICON_SEL)).some(icon => {
+                const t = (icon.textContent || '').trim().toLowerCase()
+                return t === 'more_vert' || t === 'more_horiz'
+              })) return node
+              node = node.parentElement
+            }
+            return null
+          }
+
+          function findThreeDots(scope) {
+            if (!scope) return null
+            for (const icon of scope.querySelectorAll(ICON_SEL)) {
+              const t = (icon.textContent || '').trim().toLowerCase()
+              if (t === 'more_vert' || t === 'more_horiz')
+                return icon.closest('button') || icon.parentElement
+            }
+            return null
+          }
+
+          function findMenuItem(menu, iconText) {
+            if (!menu) return null
+            const needle = iconText.toLowerCase()
+            for (const item of menu.querySelectorAll("[role='menuitem']")) {
+              for (const icon of item.querySelectorAll(ICON_SEL))
+                if ((icon.textContent || '').trim().toLowerCase() === needle) return item
+              if ((item.textContent || '').trim().toLowerCase().startsWith(needle)) return item
+            }
+            return null
+          }
+
+          function unhover(el) {
+            if (!el) return
+            el.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+            el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+            let node = el.parentElement
+            for (let i = 0; i < 4 && node; i++) {
+              node.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+              node.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+              node = node.parentElement
+            }
+          }
+
+          try {
+            // 1. 이미지 요소 찾기
+            LOG('Finding image for: ' + mediaId.substring(0, 30))
+            const targetImg = findImageElement(mediaId)
+            if (!targetImg) {
+              return { success: false, error: 'Image element not found on page' }
+            }
+            LOG('Found image, src: ' + (targetImg.getAttribute('src') || '').substring(0, 60))
+
+            // 2. Hover — 오버레이 표시
+            targetImg.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+            targetImg.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+            let hoverNode = targetImg.parentElement
+            for (let i = 0; i < 4 && hoverNode; i++) {
+              hoverNode.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+              hoverNode.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+              hoverNode = hoverNode.parentElement
+            }
+            await new Promise(r => setTimeout(r, 500))
+
+            // 3. Tile 찾기 (more_vert/more_horiz 포함)
+            const tile = findTileWithOverlay(targetImg)
+            if (!tile) {
+              unhover(targetImg)
+              return { success: false, error: 'Overlay tile not found after hover' }
+            }
+
+            // 4. Three-dots 버튼 클릭
+            const threeDotsBtn = findThreeDots(tile)
+            if (!threeDotsBtn) {
+              unhover(targetImg)
+              return { success: false, error: 'Three-dots button not found in tile' }
+            }
+            LOG('Clicking three-dots button')
+            pointerClick(threeDotsBtn)
+            await new Promise(r => setTimeout(r, 300))
+
+            // 5. 메뉴 대기 (재시도 1회)
+            let menu = await waitForMenu(2000)
+            if (!menu) {
+              pointerClick(threeDotsBtn)
+              menu = await waitForMenu(2000)
+            }
+            if (!menu) {
+              unhover(targetImg)
+              return { success: false, error: 'Context menu did not open' }
+            }
+            LOG('Context menu opened')
+
+            // 6. "download" 메뉴 아이템 찾기
+            const downloadItem = findMenuItem(menu, 'download')
+            if (!downloadItem) {
+              const items = Array.from(menu.querySelectorAll("[role='menuitem']")).map(i => i.textContent?.trim())
+              LOG('Download item not found. Items: ' + JSON.stringify(items))
+              await closeMenus()
+              unhover(targetImg)
+              return { success: false, error: 'Download menu item not found. Items: ' + items.join(', ') }
+            }
+            LOG('Hovering Download menu item to open submenu')
+
+            // 7. Download 호버 → 서브메뉴 열기 (Radix UI 호환)
+            const dlRect = downloadItem.getBoundingClientRect()
+            const dlX = dlRect.left + dlRect.width / 2
+            const dlY = dlRect.top + dlRect.height / 2
+            const hoverOpts = { bubbles: true, cancelable: true, clientX: dlX, clientY: dlY, pointerId: 1, pointerType: 'mouse', isPrimary: true }
+
+            downloadItem.focus?.()
+            downloadItem.setAttribute?.('data-highlighted', '')
+            downloadItem.dispatchEvent(new PointerEvent('pointerenter', { ...hoverOpts, composed: true }))
+            downloadItem.dispatchEvent(new PointerEvent('pointermove', { ...hoverOpts, composed: true }))
+            downloadItem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: dlX, clientY: dlY }))
+            downloadItem.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: dlX, clientY: dlY }))
+            downloadItem.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: dlX, clientY: dlY }))
+            await new Promise(r => setTimeout(r, 400))
+
+            // 8. 서브메뉴 대기 (jitter 포함)
+            let submenu = null
+            for (let attempt = 0; attempt < 20; attempt++) {
+              const openMenus = document.querySelectorAll("[data-radix-menu-content][data-state='open'], [role='menu'][data-state='open']")
+              if (openMenus.length >= 2) {
+                submenu = openMenus[openMenus.length - 1]
+                break
+              }
+              if (attempt % 3 === 2) {
+                const jX = dlX + (attempt % 2 === 0 ? 2 : -2)
+                const jY = dlY + (attempt % 2 === 0 ? 1 : -1)
+                const jOpts = { ...hoverOpts, clientX: jX, clientY: jY }
+                downloadItem.dispatchEvent(new PointerEvent('pointermove', { ...jOpts, composed: true }))
+                downloadItem.dispatchEvent(new PointerEvent('pointerenter', { ...jOpts, composed: true }))
+                downloadItem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: jX, clientY: jY }))
+                downloadItem.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: jX, clientY: jY }))
+              }
+              await new Promise(r => setTimeout(r, 200))
+            }
+
+            // 9. 해상도 선택 (이미지: 1K/2K/4K)
+            if (submenu) {
+              LOG('Submenu opened! Looking for resolution: ' + resText)
+              const submenuItems = Array.from(submenu.querySelectorAll("[role='menuitem']"))
+              LOG('Submenu items: ' + submenuItems.map(i => i.textContent?.trim()).join(', '))
+              let resOption = null
+              for (const item of submenuItems) {
+                if ((item.textContent || '').includes(resText)) {
+                  resOption = item
+                  break
+                }
+              }
+              if (resOption) {
+                pointerClick(resOption)
+                LOG('Clicked resolution: ' + resText)
+                await closeMenus()
+                unhover(targetImg)
+                return { success: true, resolution: resText }
+              }
+            }
+
+            // 10. 서브메뉴 안 열리면 click + keyboard fallback
+            if (!submenu) {
+              LOG('Submenu did not open, trying click + keyboard fallback')
+              pointerClick(downloadItem)
+              await new Promise(r => setTimeout(r, 400))
+              downloadItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+              await new Promise(r => setTimeout(r, 400))
+
+              for (const item of document.querySelectorAll("[role='menuitem']")) {
+                if ((item.textContent || '').includes(resText)) {
+                  pointerClick(item)
+                  LOG('Clicked resolution (keyboard fallback): ' + resText)
+                  await closeMenus()
+                  unhover(targetImg)
+                  return { success: true, resolution: resText }
+                }
+              }
+            }
+
+            // 11. 해상도 옵션 없으면 직접 다운로드 (원본)
+            LOG('No resolution submenu, clicking download directly')
+            pointerClick(downloadItem)
+            await closeMenus()
+            unhover(targetImg)
+            return { success: true, resolution: 'default' }
+
+          } catch (e) {
+            try { await closeMenus() } catch {}
+            return { success: false, error: e.message }
+          }
+        })()
+      `)
+
+      console.log('[Flow Image Upscale] DOM automation result:', JSON.stringify(domResult))
+
+      if (!domResult.success) {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+        return { success: false, error: `DOM: ${domResult.error}` }
+      }
+
+      // Step 3: temp 디렉토리에서 다운로드 파일 대기 (폴링)
+      console.log('[Flow Image Upscale] Waiting for download file in:', tempDir)
+      let downloadedFile = null
+      const maxWait = 120000 // 2분 (업스케일 처리 시간 포함)
+      const startTime = Date.now()
+
+      while (Date.now() - startTime < maxWait) {
+        await new Promise(r => setTimeout(r, 1000))
+
+        try {
+          const files = fs.readdirSync(tempDir)
+            .filter(f => !f.endsWith('.crdownload') && !f.endsWith('.tmp') && !f.startsWith('.'))
+
+          if (files.length > 0) {
+            const filePath = path.join(tempDir, files[0])
+            const stats = fs.statSync(filePath)
+
+            // 파일 크기 안정화 확인
+            await new Promise(r => setTimeout(r, 1000))
+            const stats2 = fs.statSync(filePath)
+
+            if (stats.size === stats2.size && stats.size > 0) {
+              downloadedFile = filePath
+              console.log('[Flow Image Upscale] File ready:', files[0], 'size:', stats.size)
+              break
+            }
+          }
+        } catch {}
+      }
+
+      // CDP 다운로드 설정 해제
+      try {
+        await flowView.webContents.debugger.sendCommand('Page.setDownloadBehavior', { behavior: 'default' })
+      } catch {}
+
+      // 업스케일 완료 토스트 닫기
+      try {
+        await flowView.webContents.executeJavaScript(`
+          (function() {
+            const buttons = Array.from(document.querySelectorAll('button'))
+            for (const btn of buttons) {
+              const text = (btn.textContent || '').trim()
+              if (text === '닫기' || text === 'Close') { btn.click(); break }
+            }
+          })()
+        `)
+      } catch {}
+
+      if (!downloadedFile) {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+        return { success: false, error: 'Download timeout — no file appeared in temp dir' }
+      }
+
+      // Step 4: 파일 읽기 → base64 (data URL)
+      try {
+        const data = fs.readFileSync(downloadedFile)
+        const ext = path.extname(downloadedFile).toLowerCase()
+        const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+          : ext === '.webp' ? 'image/webp' : 'image/png'
+        const base64DataUrl = `data:${mimeType};base64,${data.toString('base64')}`
+        console.log('[Flow Image Upscale] ✅ Success — size:', data.length, 'bytes, type:', mimeType)
+
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+        return { success: true, data: base64DataUrl }
+      } catch (readErr) {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+        return { success: false, error: `File read error: ${readErr.message}` }
+      }
+
+    } catch (e) {
+      console.error('[Flow Image Upscale] Error:', e.message)
+      return { success: false, error: e.message }
     }
   })
 }

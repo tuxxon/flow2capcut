@@ -9,6 +9,11 @@ const RESOLUTION_OPTIONS = [
   { value: '1080p', label: '1080p (HD)' },
   { value: '4k', label: '4K' },
 ]
+const IMAGE_UPSCALE_OPTIONS = [
+  { value: 'off', labelKey: 'settings.imageUpscaleOff' },
+  { value: '2k', labelKey: 'settings.imageUpscale2k' },
+  { value: '4k', labelKey: 'settings.imageUpscale4k' },
+]
 
 export default function SceneTab({ localSettings, setLocalSettings, t }) {
   return (
@@ -74,6 +79,27 @@ export default function SceneTab({ localSettings, setLocalSettings, t }) {
             ))}
           </div>
           <span className="setting-sublabel">{t('settings.videoBatchHint')}</span>
+        </div>
+      </div>
+
+      {/* 이미지 업스케일 */}
+      <div className="settings-section">
+        <h3>{t('settings.imageUpscaleSettings')}</h3>
+
+        <div className="setting-row">
+          <label className="setting-label">{t('settings.imageUpscale')}</label>
+          <div className="batch-selector">
+            {IMAGE_UPSCALE_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                className={`batch-btn ${(localSettings.imageUpscale || '2k') === opt.value ? 'active' : ''}`}
+                onClick={() => setLocalSettings(s => ({ ...s, imageUpscale: opt.value }))}
+              >
+                {t(opt.labelKey)}
+              </button>
+            ))}
+          </div>
+          <span className="setting-sublabel">{t('settings.imageUpscaleHint')}</span>
         </div>
       </div>
 

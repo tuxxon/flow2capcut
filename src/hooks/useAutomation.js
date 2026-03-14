@@ -30,7 +30,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
   const pausedRef = useRef(false)
   const completedCountRef = useRef(0)
   
-  const { generateImageDOM, uploadReference, getAccessToken } = flowAPI
+  const { generateImageDOM, submitGenerationDOM, checkGeneration, collectGeneration, clearGenerations, uploadReference, getAccessToken } = flowAPI
   const { scenes, references, updateScene, getMatchingReferences } = scenesHook
 
   // 씬이 모두 삭제되거나, 생성된 이미지가 없는 상태로 돌아가면 progress/status 리셋
@@ -48,7 +48,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
    * 단일 씬 처리
    */
   const processScene = async (scene, options) => {
-    const { projectName, saveMode, imageBatchCount } = options
+    const { projectName, saveMode, imageBatchCount, imageUpscale } = options
 
     // 일시정지 대기
     while (pausedRef.current && !stopRequestedRef.current) {
@@ -102,8 +102,25 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
     if (result.success && result.images?.length > 0) {
       // images는 [{ base64, mediaId }] 객체 배열
       const firstImage = result.images[0]
-      const imageData = firstImage.base64 || firstImage  // backward compat: string fallback
+      let imageData = firstImage.base64 || firstImage  // backward compat: string fallback
       const mediaId = firstImage.mediaId || null
+
+      // 이미지 업스케일 (설정에 따라)
+      const upscaleRes = imageUpscale || '2k'
+      if (upscaleRes !== 'off' && mediaId) {
+        try {
+          console.log('[Automation] Upscaling image to', upscaleRes, '...')
+          const upResult = await flowAPI.upscaleImage(mediaId, upscaleRes)
+          if (upResult.success && upResult.data) {
+            imageData = upResult.data
+            console.log('[Automation] Upscale success')
+          } else {
+            console.warn('[Automation] Upscale failed, using original:', upResult.error)
+          }
+        } catch (e) {
+          console.warn('[Automation] Upscale error, using original:', e.message)
+        }
+      }
 
       // 이미지 크기 추출
       let imageSize = null
@@ -187,71 +204,167 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
   }
   
   /**
-   * Concurrent Queue 실행
+   * 비동기 배치 실행 (fire-and-forget + 폴링 수집)
    */
   const runConcurrentQueue = async (targetScenes, options, total) => {
-    const queue = [...targetScenes]
-    const activePromises = new Map()
+    const { projectName, saveMode, imageBatchCount, imageUpscale } = options
     completedCountRef.current = 0
-    
-    const updateProgress = () => {
-      const current = completedCountRef.current
-      setProgress({
-        current,
-        total,
-        percent: Math.round((current / total) * 100)
-      })
-      
-      // 진행중인 씬들 표시
-      const runningIds = Array.from(activePromises.keys()).join(', ')
-      if (runningIds) {
-        setStatusMessage(t('status.generatingScene', { ids: runningIds, current, total }))
+    const pendingQueue = [] // { generationId, scene, submittedAt }
+    let consecutiveErrors = 0
+
+    const updateProgressMsg = (current) => {
+      setProgress({ current, total, percent: Math.round((current / total) * 100) })
+    }
+
+    // 비동기 결과 후처리 (업스케일 + 저장)
+    const processAsyncResult = async (scene, result) => {
+      if (result.success && result.images?.length > 0) {
+        const firstImage = result.images[0]
+        let imageData = firstImage.base64 || firstImage
+        const mediaId = firstImage.mediaId || null
+
+        // 업스케일
+        const upscaleRes = imageUpscale || '2k'
+        if (upscaleRes !== 'off' && mediaId) {
+          try {
+            console.log('[Automation] Upscaling image to', upscaleRes, '...')
+            const upResult = await flowAPI.upscaleImage(mediaId, upscaleRes)
+            if (upResult.success && upResult.data) {
+              imageData = upResult.data
+              console.log('[Automation] Upscale success')
+            } else {
+              console.warn('[Automation] Upscale failed, using original:', upResult.error)
+            }
+          } catch (e) {
+            console.warn('[Automation] Upscale error, using original:', e.message)
+          }
+        }
+
+        // 이미지 크기 추출
+        let imageSize = null
+        try { imageSize = await getImageSizeFromBase64(imageData) } catch (e) { /* ignore */ }
+
+        // 저장
+        if (saveMode === 'folder') {
+          const metadata = { prompt: scene.prompt, mediaId, model: 'flow', timestamp: Date.now() }
+          const saveResult = await fileSystemAPI.saveImage(projectName, scene.id, imageData, 'flow', metadata)
+          updateScene(scene.id, {
+            status: 'done',
+            image: saveResult.success ? null : imageData,
+            imagePath: saveResult.success ? saveResult.path : null,
+            mediaId, image_size: imageSize
+          })
+          await fileSystemAPI.saveExtraToHistory(projectName, RESOURCE.SCENES, scene.id, result.images, scene.prompt, 'Automation')
+        } else {
+          updateScene(scene.id, { status: 'done', image: imageData, mediaId, image_size: imageSize })
+        }
+        return true
+      } else {
+        updateScene(scene.id, { status: 'error', error: result.error || 'No images' })
+        return false
       }
     }
-    
-    const processNext = async () => {
-      while (queue.length > 0 && !stopRequestedRef.current) {
-        // 일시정지 대기
-        while (pausedRef.current && !stopRequestedRef.current) {
+
+    // 완료된 결과 수집
+    const collectCompleted = async () => {
+      const stillPending = []
+      for (const item of pendingQueue) {
+        if (stopRequestedRef.current) { stillPending.push(item); continue }
+        try {
+          const st = await checkGeneration(item.generationId)
+          if (st.completed) {
+            const result = await collectGeneration(item.generationId)
+            console.log('[Automation] Collected scene', item.scene.id, ':', result.success, result.images?.length || 0, 'images')
+            await processAsyncResult(item.scene, result)
+            completedCountRef.current++
+            updateProgressMsg(completedCountRef.current)
+          } else {
+            stillPending.push(item)
+          }
+        } catch (e) {
+          console.error('[Automation] Check/collect error for scene', item.scene.id, ':', e.message)
+          stillPending.push(item)
+        }
+      }
+      pendingQueue.length = 0
+      pendingQueue.push(...stillPending)
+    }
+
+    // Phase 1: 비동기 제출 + 중간 수집
+    for (let i = 0; i < targetScenes.length; i++) {
+      while (pausedRef.current && !stopRequestedRef.current) {
+        await new Promise(r => setTimeout(r, 500))
+      }
+      if (stopRequestedRef.current) break
+
+      const scene = targetScenes[i]
+      updateScene(scene.id, { status: 'generating' })
+      setStatusMessage(t('status.generatingScene', { ids: scene.id, current: completedCountRef.current, total }))
+
+      // 매칭 레퍼런스
+      const allMatched = getMatchingReferences(scene)
+      const matchedRefs = allMatched
+        .filter(r => r.mediaId)
+        .map(r => ({ category: r.category, mediaId: r.mediaId, caption: r.caption || '' }))
+      if (matchedRefs.length > 0) {
+        console.log('[Automation] Scene', scene.id, '→ injecting', matchedRefs.length, 'refs')
+      }
+
+      // 비동기 제출
+      const submitResult = await submitGenerationDOM(scene.prompt, matchedRefs, { batchCount: imageBatchCount })
+      if (submitResult.success && submitResult.generationId) {
+        pendingQueue.push({ generationId: submitResult.generationId, scene, submittedAt: Date.now() })
+        consecutiveErrors = 0
+        console.log('[Automation] Submitted scene', scene.id, '→', submitResult.generationId)
+      } else {
+        console.error('[Automation] Submit failed for scene', scene.id, ':', submitResult.error)
+        updateScene(scene.id, { status: 'error', error: submitResult.error })
+        completedCountRef.current++
+        updateProgressMsg(completedCountRef.current)
+        consecutiveErrors++
+        if (consecutiveErrors >= 3) {
+          console.error('[Automation] 3 consecutive submit failures, stopping')
+          break
+        }
+      }
+
+      // 씬 사이 대기 (7~15초) + 중간 수집
+      if (i < targetScenes.length - 1 && !stopRequestedRef.current) {
+        const waitMs = 7000 + Math.floor(Math.random() * 8000)
+        console.log('[Automation] Waiting', Math.round(waitMs / 1000), 's before next submit...')
+        const waitEnd = Date.now() + waitMs
+        while (Date.now() < waitEnd && !stopRequestedRef.current) {
+          while (pausedRef.current && !stopRequestedRef.current) {
+            await new Promise(r => setTimeout(r, 500))
+          }
           await new Promise(r => setTimeout(r, 500))
         }
-        
-        if (stopRequestedRef.current) break
-        
-        const scene = queue.shift()
-        if (!scene) break
-        
-        activePromises.set(scene.id, true)
-        updateProgress()
-        
-        try {
-          await processScene(scene, options)
-        } catch (e) {
-          console.error('Scene processing error:', e)
-          updateScene(scene.id, { status: 'error', error: e.message })
-        }
-        
-        activePromises.delete(scene.id)
-        completedCountRef.current++
-        updateProgress()
-        
-        // 씬 사이 랜덤 딜레이
-        if (queue.length > 0) {
-          const delay = DEFAULTS.generation.delayMin +
-            Math.floor(Math.random() * (DEFAULTS.generation.delayMax - DEFAULTS.generation.delayMin + 1))
-          await new Promise(r => setTimeout(r, delay))
+        // 중간 수집
+        if (pendingQueue.length > 0 && !stopRequestedRef.current) {
+          await collectCompleted()
         }
       }
     }
-    
-    // FlowView가 하나이므로 반드시 순차(1) — 동시 처리하면 CDP 응답이 꼬임
-    const concurrency = 1
-    const workers = []
-    for (let i = 0; i < Math.min(concurrency, targetScenes.length); i++) {
-      workers.push(processNext())
+
+    // Phase 2: 남은 결과 전부 수집 (3초 간격, 최대 3분)
+    const pollStart = Date.now()
+    while (pendingQueue.length > 0 && !stopRequestedRef.current && (Date.now() - pollStart < 180000)) {
+      setStatusMessage(t('status.collectingResults') || `Collecting results... (${pendingQueue.length} remaining)`)
+      await collectCompleted()
+      if (pendingQueue.length > 0) {
+        await new Promise(r => setTimeout(r, 3000))
+      }
     }
-    
-    await Promise.all(workers)
+
+    // 미수집 처리
+    for (const item of pendingQueue) {
+      updateScene(item.scene.id, { status: 'error', error: 'Timeout or stopped' })
+      completedCountRef.current++
+    }
+    updateProgressMsg(completedCountRef.current)
+
+    // 정리
+    try { await clearGenerations() } catch (e) { /* ignore */ }
   }
   
   /**
@@ -262,7 +375,8 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       projectName = generateProjectName(),
       saveMode = 'folder',
       sceneIndices = null,
-      imageBatchCount = 1
+      imageBatchCount = 1,
+      imageUpscale = '2k'
     } = options
 
     if (isRunning) return
@@ -370,6 +484,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       projectName,
       saveMode,
       imageBatchCount,
+      imageUpscale,
     }, total)
     
     // 완료
@@ -385,7 +500,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       setStatusMessage(t('status.done'))
     }
 
-  }, [isRunning, scenes, references, generateImageDOM, uploadReference, getAccessToken, updateScene, getMatchingReferences, t, onOpenSettings])
+  }, [isRunning, scenes, references, generateImageDOM, submitGenerationDOM, checkGeneration, collectGeneration, clearGenerations, uploadReference, getAccessToken, updateScene, getMatchingReferences, t, onOpenSettings])
   
   /**
    * 일시정지/재개

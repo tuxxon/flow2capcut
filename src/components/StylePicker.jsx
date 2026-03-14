@@ -32,6 +32,7 @@ export default function StylePicker({
   isKo
 }) {
   const [activeCategory, setActiveCategory] = useState(ALL_CATEGORY)
+  const [searchQuery, setSearchQuery] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [previewStyle, setPreviewStyle] = useState(null)  // 더블클릭 미리보기
   const [hoverPreview, setHoverPreview] = useState(null)  // 호버 풍선 { style, thumb, x, y }
@@ -52,11 +53,22 @@ export default function StylePicker({
   const categories = STYLE_PRESETS?.categories || []
   const allStyles = STYLE_PRESETS?.styles || []
 
-  // 현재 카테고리에 해당하는 스타일 필터
+  // 카테고리 + 검색어 필터
   const filteredStyles = useMemo(() => {
-    if (activeCategory === ALL_CATEGORY) return allStyles
-    return allStyles.filter(s => s.category === activeCategory)
-  }, [activeCategory, allStyles])
+    let result = activeCategory === ALL_CATEGORY
+      ? allStyles
+      : allStyles.filter(s => s.category === activeCategory)
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      result = result.filter(s =>
+        s.name_ko?.toLowerCase().includes(q) ||
+        s.name_en?.toLowerCase().includes(q) ||
+        s.prompt_en?.toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [activeCategory, allStyles, searchQuery])
 
   // 썸네일 미생성 프리셋 수
   const missingCount = allStyles.filter(s => !thumbnails[s.id]).length
@@ -85,6 +97,20 @@ export default function StylePicker({
             </button>
           )
         })}
+      </div>
+
+      {/* 검색 */}
+      <div className="sp-search">
+        <input
+          type="text"
+          className="sp-search-input"
+          placeholder={isKo ? '스타일 검색...' : 'Search styles...'}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button className="sp-search-clear" onClick={() => setSearchQuery('')}>✕</button>
+        )}
       </div>
 
       {/* 업로드된 스타일 레퍼런스 (있으면) */}

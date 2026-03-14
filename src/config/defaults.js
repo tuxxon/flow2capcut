@@ -67,6 +67,10 @@ export const DEFAULTS = {
       '1080p': { modelKey: 'veo_3_1_upsampler_1080p', resolution: 'VIDEO_RESOLUTION_1080P' },
       '4k':    { modelKey: 'veo_3_1_upsampler_4k',    resolution: 'VIDEO_RESOLUTION_4K' },
     },
+    // 이미지 업스케일 (DOM 방식: three-dots → download → 해상도 선택)
+    imageUpscale: {
+      resolutions: ['2k', '4k'],
+    },
   },
 
   // DOM 셀렉터 (DOM 방식용) - Flow 페이지용 (AutoFlow 10.7.58 검증)

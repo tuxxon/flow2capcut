@@ -7,7 +7,13 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
-import { generateImageDOM as generateImageDOMImpl } from '../utils/flowDOMClient'
+import {
+  generateImageDOM as generateImageDOMImpl,
+  submitGenerationDOM as submitGenerationDOMImpl,
+  checkGeneration as checkGenerationImpl,
+  collectGeneration as collectGenerationImpl,
+  clearGenerations as clearGenerationsImpl
+} from '../utils/flowDOMClient'
 
 export function useFlowAPI() {
   const [accessToken, setAccessToken] = useState(null)
@@ -89,6 +95,27 @@ export function useFlowAPI() {
    */
   const generateImageDOM = useCallback(async (prompt, referenceImages = [], options = {}) => {
     return generateImageDOMImpl(prompt, referenceImages, options)
+  }, [])
+
+  // 비동기 이미지 생성: 제출만 (fire-and-forget)
+  const submitGenerationDOM = useCallback(async (prompt, referenceImages = [], options = {}) => {
+    return submitGenerationDOMImpl(prompt, referenceImages, options)
+  }, [])
+
+  // 비동기 결과 조회 (폴링용)
+  const checkGeneration = useCallback(async (generationId) => {
+    return checkGenerationImpl(generationId)
+  }, [])
+
+  // 비동기 결과 수집 (완료 후 이미지 파싱)
+  const collectGeneration = useCallback(async (generationId) => {
+    const token = await getAccessToken()
+    return collectGenerationImpl(generationId, token)
+  }, [getAccessToken])
+
+  // 비동기 생성 일괄 정리
+  const clearGenerations = useCallback(async () => {
+    return clearGenerationsImpl()
   }, [])
 
   /**
@@ -203,6 +230,25 @@ export function useFlowAPI() {
   }, [getAccessToken, projectId])
 
   /**
+   * 이미지 업스케일 (2K/4K) — 생성된 이미지를 고해상도로 변환
+   * @param {string} mediaId - 원본 이미지의 mediaId
+   * @param {string} resolution - '2k' 또는 '4k'
+   * @returns {{ success, data: 'data:image/png;base64,...' }}
+   */
+  const upscaleImage = useCallback(async (mediaId, resolution) => {
+    const token = await getAccessToken()
+    if (!token) return { success: false, error: 'No access token' }
+
+    try {
+      return await window.electronAPI.upscaleImage({
+        token, mediaId, projectId, resolution
+      })
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }, [getAccessToken, projectId])
+
+  /**
    * 갤러리 (프로젝트 미디어) 조회
    * @returns {{ success, items: [{ mediaId, url }] }}
    */
@@ -234,12 +280,17 @@ export function useFlowAPI() {
     getAccessToken,
     clearTokenCache,
     generateImageDOM,
+    submitGenerationDOM,
+    checkGeneration,
+    collectGeneration,
+    clearGenerations,
     uploadReference,
     fetchMedia,
     generateVideoT2V,
     generateVideoI2V,
     checkVideoStatus,
     upscaleVideo,
+    upscaleImage,
     fetchGallery,
     setStopRequested
   }

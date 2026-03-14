@@ -45,8 +45,25 @@ export function useSceneGeneration({ settings, scenes, scenesHook, flowAPI, open
       if (result.success && result.images?.length > 0) {
         // images는 [{ base64, mediaId }] 객체 배열
         const firstImage = result.images[0]
-        const imageData = firstImage.base64 || firstImage  // backward compat
+        let imageData = firstImage.base64 || firstImage  // backward compat
         const mediaId = firstImage.mediaId || null
+
+        // 이미지 업스케일 (설정에 따라)
+        const upscaleRes = settings.imageUpscale || '2k'
+        if (upscaleRes !== 'off' && mediaId) {
+          try {
+            console.log('[Scene] Upscaling image to', upscaleRes, '...')
+            const upResult = await flowAPI.upscaleImage(mediaId, upscaleRes)
+            if (upResult.success && upResult.data) {
+              imageData = upResult.data
+              console.log('[Scene] Upscale success')
+            } else {
+              console.warn('[Scene] Upscale failed, using original:', upResult.error)
+            }
+          } catch (e) {
+            console.warn('[Scene] Upscale error, using original:', e.message)
+          }
+        }
 
         // 이미지 크기 추출
         let imageSize = null

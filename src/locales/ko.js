@@ -160,6 +160,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     generateAll: '일괄 생성',
     stop: '중단',
     stopping: '중단중',
+    preparing: '준비중...',
     noStyle: '스타일 없음',
     styleRefHint: '생성 시 적용할 스타일 레퍼런스 선택',
     batchWizardTitle: '일괄 생성',
@@ -299,6 +300,14 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     videoBatchCount: '비디오 배치 카운트',
     videoBatchHint: 'Flow에서 한 번에 생성할 비디오 수',
 
+    // 이미지 업스케일
+    imageUpscaleSettings: '이미지 업스케일',
+    imageUpscale: '업스케일 해상도',
+    imageUpscaleHint: '이미지 생성 후 자동 업스케일 (기본: 2K)',
+    imageUpscaleOff: 'OFF',
+    imageUpscale2k: '2K',
+    imageUpscale4k: '4K',
+
     // 비디오 다운로드
     videoDownloadSettings: '비디오 다운로드',
     videoResolution: '다운로드 해상도',
@@ -352,6 +361,16 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     wrongTypeSrt: '이 파일은 SRT 자막 파일입니다.\nSRT로 import할까요?',
     wrongTypeCsv: '이 파일은 CSV 파일입니다.\n씬 CSV로 import할까요?',
     wrongTypeText: '이 파일은 일반 텍스트입니다.\n프롬프트로 import할까요?',
+    audioTitle: '오디오 패키지',
+    audioDesc: '인물 음성 + 음향효과 (CapCut 멀티트랙)',
+    audioHint: 'footage/ + voice_samples/ + sfx/',
+  },
+
+  // 오디오 Import
+  audioImport: {
+    electronRequired: 'Electron 데스크탑 버전에서만 사용 가능합니다.',
+    scanFailed: '오디오 패키지 스캔 실패: {error}',
+    scanSuccess: '오디오 패키지 로드 완료!\n인물: {characters}\n음성 {voiceCount}개, SFX {sfxCount}개',
   },
   
   // 기록

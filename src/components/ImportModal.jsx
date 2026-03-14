@@ -12,7 +12,7 @@ const getGuideBaseUrl = (lang) => {
   return `https://touchizen.com/guide/${langCode}/flow2capcut`
 }
 
-export default function ImportModal({ onImport, onClose }) {
+export default function ImportModal({ onImport, onImportAudio, onClose }) {
   const { t, lang } = useI18n()
   const [selectedType, setSelectedType] = useState(null)
   const fileInputRef = useRef(null)
@@ -66,7 +66,23 @@ export default function ImportModal({ onImport, onClose }) {
     }
   ]
 
+  // 오디오 패키지는 폴더 선택이므로 별도 처리
+  const audioOption = window.electronAPI ? {
+    id: 'audio',
+    icon: '🎵',
+    title: t('import.audioTitle'),
+    description: t('import.audioDesc'),
+    hint: t('import.audioHint'),
+    isFolder: true
+  } : null
+
   const handleOptionClick = (option) => {
+    if (option.isFolder) {
+      // 오디오 패키지: 폴더 선택 → onImportAudio 콜백
+      onImportAudio?.()
+      onClose()
+      return
+    }
     setSelectedType(option.id)
     fileInputRef.current.accept = option.accept
     fileInputRef.current.click()
@@ -134,6 +150,21 @@ export default function ImportModal({ onImport, onClose }) {
             </div>
           </div>
         ))}
+
+        {/* 오디오 패키지 (Electron 전용, 폴더 선택) */}
+        {audioOption && (
+          <div className="import-option-wrapper">
+            <div className="import-option" onClick={() => handleOptionClick(audioOption)}>
+              <div className="option-icon">{audioOption.icon}</div>
+              <div className="option-info">
+                <div className="option-title">{audioOption.title}</div>
+                <div className="option-desc">{audioOption.description}</div>
+                <div className="option-hint">{audioOption.hint}</div>
+              </div>
+              <div className="option-arrow">→</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />

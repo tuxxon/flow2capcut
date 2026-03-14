@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   extractProjectId: () => ipcRenderer.invoke('flow:extract-project-id'),
   validateToken: (params) => ipcRenderer.invoke('flow:validate-token', params),
   generateImage: (params) => ipcRenderer.invoke('flow:generate-image', params),
+  checkGeneration: (params) => ipcRenderer.invoke('flow:check-generation', params),
+  collectGeneration: (params) => ipcRenderer.invoke('flow:collect-generation', params),
+  clearGenerations: () => ipcRenderer.invoke('flow:clear-generations'),
   fetchMedia: (params) => ipcRenderer.invoke('flow:fetch-media', params),
   uploadReference: (params) => ipcRenderer.invoke('flow:upload-reference', params),
 
@@ -28,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadVideoUrl: (params) => ipcRenderer.invoke('flow:download-video-url', params),
   domDownloadVideo: (params) => ipcRenderer.invoke('flow:dom-download-video', params),
   upscaleVideo: (params) => ipcRenderer.invoke('flow:upscale-video', params),
+  upscaleImage: (params) => ipcRenderer.invoke('flow:upscale-image', params),
   fetchGallery: (params) => ipcRenderer.invoke('flow:fetch-gallery', params),
 
   // File System
@@ -57,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadStyleThumbnails: () => ipcRenderer.invoke('fs:load-style-thumbnails'),
   checkStyleThumbnails: () => ipcRenderer.invoke('fs:check-style-thumbnails'),
   deleteStyleThumbnail: (params) => ipcRenderer.invoke('fs:delete-style-thumbnail', params),
+  scanAudioPackage: () => ipcRenderer.invoke('fs:scan-audio-package'),
+  readFileAbsolute: (params) => ipcRenderer.invoke('fs:read-file-absolute', params),
 
   // CapCut
   detectCapcutPath: () => ipcRenderer.invoke('capcut:detect-path'),

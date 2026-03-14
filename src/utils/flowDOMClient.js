@@ -139,6 +139,71 @@ export function requestStopDOM() {
  * 3) CDP로 batchGenerateImages 응답 캡처
  * 4) base64 이미지 추출 또는 mediaId → fetch
  */
+/**
+ * 비동기 제출 — 프롬프트만 제출하고 즉시 반환 (fire-and-forget)
+ * @returns {{ success, generationId }} generationId로 나중에 결과 조회
+ */
+export async function submitGenerationDOM(prompt, referenceImages = [], { batchCount } = {}) {
+  try {
+    await ensureFlowProject(false)
+    if (stopRequested) return { success: false, error: 'Stopped by user' }
+
+    console.log('[DOM] Calling flow:generate-image (asyncMode) for prompt:', prompt?.substring(0, 40))
+    const result = await window.electronAPI.generateImage({
+      prompt,
+      aspectRatio: null,
+      token: null,
+      model: null,
+      projectId: null,
+      seed: null,
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      batchCount: batchCount || undefined,
+      asyncMode: true
+    })
+
+    console.log('[DOM] Async submit result:', result?.success, 'generationId:', result?.generationId)
+    return result
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 비동기 결과 조회 — generationId로 생성 완료 여부 확인
+ */
+export async function checkGeneration(generationId) {
+  try {
+    return await window.electronAPI.checkGeneration({ generationId })
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 비동기 결과 수집 — 완료된 생성의 이미지 파싱 + 반환
+ */
+export async function collectGeneration(generationId, token) {
+  try {
+    return await window.electronAPI.collectGeneration({ generationId, token })
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 비동기 생성 일괄 정리 (배치 종료 시)
+ */
+export async function clearGenerations() {
+  try {
+    return await window.electronAPI.clearGenerations()
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * DOM 방식으로 이미지 생성 (동기 — 기존 메인 엔트리)
+ */
 export async function generateImageDOM(prompt, referenceImages = [], { batchCount } = {}) {
   try {
     // 프로젝트 초기화: 현재 URL 확인 후 필요시 생성
