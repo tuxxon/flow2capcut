@@ -18,6 +18,7 @@ import { useExport } from './hooks/useExport'
 import { generateProjectName } from './utils/formatters'
 import { detectFileType, detectCSVType } from './utils/parsers'
 import { checkFolderPermission } from './utils/guards'
+import { collectTagErrors } from './utils/tagMatch'
 import { toast } from './components/Toast'
 
 // Components
@@ -38,6 +39,7 @@ import ResizeHandle from './components/ResizeHandle'
 import { ExportModal } from './components/ExportModal'
 import { AuthModal } from './components/AuthModal'
 import { PaywallModal } from './components/PaywallModal'
+import TagValidationModal from './components/TagValidationModal'
 import { SubscriptionBanner } from './components/SubscriptionBanner'
 import { useAuth } from './contexts/AuthContext'
 
@@ -49,6 +51,10 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPaywallModal, setShowPaywallModal] = useState(false)
   const [paywallReason, setPaywallReason] = useState('trial_expired')
+
+  // Tag Validation Modal
+  const [tagValidationErrors, setTagValidationErrors] = useState(null)
+  const [pendingStartOptions, setPendingStartOptions] = useState(null)
 
   // Settings
   const [settings, setSettings] = useState(() => {
@@ -377,14 +383,24 @@ function App() {
     const projectName = settings.projectName || generateProjectName()
 
     switch (activeTab) {
-      case 'text': {
-        // 이미지 생성 — 대상 판단은 start() 내부에서 처리
-        start({
+      case 'text':
+      case 'list': {
+        // 이미지 생성 — 태그 매칭 검증 후 시작
+        const startOptions = {
           projectName,
           saveMode: settings.saveMode,
           concurrency: settings.concurrency || 2,
           imageBatchCount: settings.imageBatchCount || 1,
-        })
+        }
+
+        const errors = collectTagErrors(scenes, scenesHook.references)
+        if (errors.length > 0) {
+          setTagValidationErrors(errors)
+          setPendingStartOptions(startOptions)
+          return
+        }
+
+        start(startOptions)
         break
       }
 
@@ -502,6 +518,19 @@ function App() {
       default:
         break
     }
+  }
+
+  // Tag validation modal callbacks
+  const handleTagValidationProceed = () => {
+    setTagValidationErrors(null)
+    if (pendingStartOptions) {
+      start(pendingStartOptions)
+      setPendingStartOptions(null)
+    }
+  }
+  const handleTagValidationCancel = () => {
+    setTagValidationErrors(null)
+    setPendingStartOptions(null)
   }
 
   // Handle stop — 활성 자동화 중지
@@ -731,13 +760,12 @@ function App() {
                     className={`btn-primary ${canExport ? 'half' : ''}`}
                     onClick={handleStart}
                     disabled={
-                      (activeTab === 'text' && scenes.length === 0) ||
+                      ((activeTab === 'text' || activeTab === 'list') && scenes.length === 0) ||
                       (activeTab === 'video-text' && videoScenes.length === 0) ||
-                      (activeTab === 'frame-to-video' && framePairs.length === 0) ||
-                      (activeTab === 'list')
+                      (activeTab === 'frame-to-video' && framePairs.length === 0)
                     }
                   >
-                    {activeTab === 'text' ? `✨ ${t('actions.start')}` : `🎬 ${t('actions.start')}`}
+                    {(activeTab === 'text' || activeTab === 'list') ? `✨ ${t('actions.start')}` : `🎬 ${t('actions.start')}`}
                   </button>
                 )}
 
@@ -893,6 +921,15 @@ function App() {
         onClose={() => setShowPaywallModal(false)}
         reason={paywallReason}
       />
+
+      {tagValidationErrors && (
+        <TagValidationModal
+          errors={tagValidationErrors}
+          onProceed={handleTagValidationProceed}
+          onCancel={handleTagValidationCancel}
+          t={t}
+        />
+      )}
     </div>
   )
 }

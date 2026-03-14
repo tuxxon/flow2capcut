@@ -665,4 +665,12 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     noItems: '생성할 항목이 없습니다.',
     stopped: '비디오 생성이 중지되었습니다.',
   },
+
+  // 태그 검증 모달
+  tagValidation: {
+    title: '⚠️ 태그 매칭 경고',
+    summary: '{sceneCount}개 씬에서 {tagCount}개 태그가 레퍼런스와 매칭되지 않습니다',
+    cancel: '취소 (수정하기)',
+    proceedAnyway: '그냥 진행',
+  },
 }

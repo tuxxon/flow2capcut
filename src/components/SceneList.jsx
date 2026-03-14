@@ -6,36 +6,12 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../hooks/useI18n'
 import { formatTime, getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
+import { checkTagMatch } from '../utils/tagMatch'
 import { UI } from '../config/defaults'
 import SceneDetailModal from './SceneDetailModal'
 import VideoDetailModal from './VideoDetailModal'
 import TagBatchModal from './TagBatchModal'
 import './SceneList.css'
-
-// 태그 매칭 여부 체크 (콤마, 세미콜론, 콜론 지원)
-function checkTagMatch(tagValue, references, type) {
-  if (!tagValue || !tagValue.trim()) return null // 태그 없음
-
-  // 콤마, 세미콜론, 콜론으로 분리
-  const tags = tagValue.split(/[,;:]/).map(t => t.trim().toLowerCase()).filter(Boolean)
-  if (tags.length === 0) return null
-
-  const matchedTags = []
-  const unmatchedTags = []
-
-  for (const tag of tags) {
-    const isMatched = references.some(ref =>
-      ref.type === type && ref.name.toLowerCase() === tag
-    )
-    if (isMatched) {
-      matchedTags.push(tag)
-    } else {
-      unmatchedTags.push(tag)
-    }
-  }
-
-  return { matchedTags, unmatchedTags, allMatched: unmatchedTags.length === 0 }
-}
 
 /**
  * Export 미디어 결정: auto → I2V > T2V > image
