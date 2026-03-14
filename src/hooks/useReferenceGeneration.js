@@ -2,8 +2,8 @@
  * useReferenceGeneration - 레퍼런스 이미지 생성 (개별 + 일괄)
  */
 
-import { useState } from 'react'
-import { RESOURCE } from '../config/defaults'
+import { useState, useRef, useCallback } from 'react'
+import { RESOURCE, STYLE_PRESETS } from '../config/defaults'
 import { fileSystemAPI } from './useFileSystem'
 import { generateProjectName } from '../utils/formatters'
 import { checkFolderPermission, checkAuthToken } from '../utils/guards'
@@ -12,9 +12,17 @@ import { toast } from '../components/Toast'
 // 1~3초 랜덤 딜레이
 const randomDelay = () => new Promise(r => setTimeout(r, 1000 + Math.random() * 2000))
 
-export function useReferenceGeneration({ settings, references, setReferences, flowAPI, addPendingSave, openSettings, pendingSavesCount = 0, t }) {
+export function useReferenceGeneration({ settings, references, setReferences, flowAPI, addPendingSave, openSettings, pendingSavesCount = 0, t, selectedStyleRefId, styleThumbnails }) {
   const [generatingRefs, setGeneratingRefs] = useState([])
+  const [stoppingRefs, setStoppingRefs] = useState(false)
   const [saveFailedOnce, setSaveFailedOnce] = useState(false)  // 배치 중 저장 실패 알림 1회만
+  const stopRequestedRef = useRef(false)
+  const presetMediaCache = useRef({})  // 프리셋 썸네일 → Flow mediaId 캐시
+
+  const stopGenerateAllRefs = useCallback(() => {
+    stopRequestedRef.current = true
+    setStoppingRefs(true)
+  }, [])
 
   // Handle reference image generation (개별)
   // @param {number} index - 레퍼런스 인덱스
@@ -37,7 +45,51 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     setGeneratingRefs(prev => [...prev, index])
 
     try {
-      const result = await flowAPI.generateImageDOM(ref.prompt, [], { batchCount: settings.imageBatchCount })
+      // 스타일 주입 (style 카드 자체 생성 시에는 제외)
+      const styleRefImages = []
+      let styledPrompt = ref.prompt
+      if (ref.type !== 'style' && selectedStyleRefId) {
+        if (selectedStyleRefId.startsWith('ref:')) {
+          // 업로드된 스타일 레퍼런스 → mediaId로 전달
+          const refId = selectedStyleRefId.replace('ref:', '')
+          const styleRef = references.find(r => r.id == refId && r.type === 'style' && r.mediaId)
+          if (styleRef) {
+            styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+          }
+        } else if (selectedStyleRefId.startsWith('preset:')) {
+          const presetId = selectedStyleRefId.replace('preset:', '')
+          const preset = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+
+          // 썸네일이 있으면 이미지 스타일 레퍼런스로 업로드 (캐시 활용)
+          if (styleThumbnails?.[presetId]) {
+            let mediaId = presetMediaCache.current[presetId]
+            if (!mediaId) {
+              const thumbData = styleThumbnails[presetId]
+              const cleanBase64 = thumbData.split(',')[1] || thumbData
+              try {
+                const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
+                if (uploadResult.success) {
+                  mediaId = uploadResult.mediaId
+                  presetMediaCache.current[presetId] = mediaId
+                  console.log('[StyleRef] Preset thumbnail uploaded, mediaId:', mediaId)
+                }
+              } catch (e) {
+                console.warn('[StyleRef] Preset thumbnail upload failed:', e)
+              }
+            }
+            if (mediaId) {
+              styleRefImages.push({ category: 'style', mediaId, caption: preset?.prompt_en || '' })
+            }
+          }
+
+          // 프롬프트에도 스타일 텍스트 추가 (이미지 + 텍스트 이중 보강)
+          if (preset?.prompt_en) {
+            styledPrompt = `${ref.prompt}, ${preset.prompt_en}`
+          }
+        }
+      }
+
+      const result = await flowAPI.generateImageDOM(styledPrompt, styleRefImages, { batchCount: settings.imageBatchCount })
 
       if (result.success && result.images?.length > 0) {
         // images는 [{ base64, mediaId }] 객체 배열
@@ -157,7 +209,7 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
   // Handle reference image generation (일괄)
   const handleGenerateAllRefs = async () => {
     const generatableIndices = references
-      .map((ref, index) => (ref.prompt && !ref.data) ? index : -1)
+      .map((ref, index) => (ref.prompt && !ref.data && !ref.filePath) ? index : -1)
       .filter(i => i !== -1)
 
     if (generatableIndices.length === 0) {
@@ -165,7 +217,9 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       return
     }
 
-    // 배치 시작 - 저장 실패 플래그 리셋
+    // 배치 시작 - 플래그 리셋
+    stopRequestedRef.current = false
+    setStoppingRefs(false)
     let hasPendingSaves = false  // 로컬 변수로 추적 (React state는 비동기라 즉시 반영 안됨)
     setSaveFailedOnce(false)
 
@@ -191,6 +245,13 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
 
     // 순차 처리 (API 안정성) - 배치 모드에서는 권한 체크 스킵
     for (const index of generatableIndices) {
+      // 중단 요청 체크
+      if (stopRequestedRef.current) {
+        console.log('[GenerateAllRefs] Stop requested by user')
+        toast.info(t('toast.batchStopped'))
+        break
+      }
+
       let result = await handleGenerateRef(index, true)  // skipPermissionCheck = true
 
       // 메모리 저장 여부 체크
@@ -201,6 +262,7 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       // 서버 에러 (500 등) 시 최대 3회 재시도
       if (result?.serverError) {
         for (let retry = 1; retry <= 3; retry++) {
+          if (stopRequestedRef.current) break
           console.log(`[GenerateAllRefs] Server error, retry ${retry}/3 after random delay...`)
           toast.info(t('toast.serverErrorRetry', { retry }))
           await randomDelay()
@@ -248,6 +310,9 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     // 완료 - pending saves가 있으면 권한 요청 안내
     console.log('[GenerateAllRefs] Batch completed, hasPendingSaves:', hasPendingSaves)
 
+    // 중단 상태 해제
+    setStoppingRefs(false)
+
     // pending saves가 있으면 설정창 열어서 권한 요청 유도
     if (hasPendingSaves) {
       toast.info(t('toast.batchCompleteNeedPermission'))
@@ -257,7 +322,9 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
 
   return {
     generatingRefs,
+    stoppingRefs,
     handleGenerateRef,
-    handleGenerateAllRefs
+    handleGenerateAllRefs,
+    stopGenerateAllRefs
   }
 }

@@ -4,8 +4,9 @@
  */
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useI18n } from '../hooks/useI18n'
-import { getRatioClass } from '../utils/formatters'
+import { getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
 
 /** 초시계 아이콘 — 초침이 실시간 회전 */
 function StopwatchIcon({ size = 18 }) {
@@ -69,6 +70,7 @@ export default function ResultsTable({
   disabled = false,         // 생성 중 편집 비활성화
 }) {
   const { t } = useI18n()
+  const [hoverPreview, setHoverPreview] = useState(null)
 
   // backward compat: accept `scenes` as fallback for `items`
   const data = items || scenes || []
@@ -101,7 +103,7 @@ export default function ResultsTable({
    * Determine if the item has displayable media
    */
   const hasMedia = (item) => {
-    if (mediaType === 'image') return !!item.image
+    if (mediaType === 'image') return hasImageData(item)
     if (mediaType === 'video') return !!item.video
     if (isPairType) return !!item.base64
     return false
@@ -111,12 +113,18 @@ export default function ResultsTable({
    * Render the media thumbnail for a given item
    */
   const renderMedia = (item, index) => {
-    if (mediaType === 'image' && item.image) {
+    const itemImgSrc = resolveImageSrc(item)
+    if (mediaType === 'image' && hasImageData(item)) {
       return (
         <img
-          src={item.image}
+          src={itemImgSrc}
           alt={`Scene ${index + 1}`}
           className="result-thumbnail"
+          onMouseEnter={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            setHoverPreview({ src: itemImgSrc, x: rect.right + 8, y: rect.top })
+          }}
+          onMouseLeave={() => setHoverPreview(null)}
         />
       )
     }
@@ -288,6 +296,20 @@ export default function ResultsTable({
           ))}
         </tbody>
       </table>
+
+      {/* 호버 풍선 프리뷰 */}
+      {hoverPreview && createPortal(
+        <div
+          className="ref-hover-balloon"
+          style={{
+            left: Math.min(hoverPreview.x, window.innerWidth - 420),
+            top: Math.max(0, Math.min(hoverPreview.y, window.innerHeight - 400))
+          }}
+        >
+          <img src={hoverPreview.src} alt="preview" />
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

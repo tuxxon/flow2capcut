@@ -303,7 +303,7 @@ export function registerFilesystemIPC(ipcMain) {
       return {
         success: true,
         filename,
-        path: `${project}/${resourceType}/${filename}`,
+        path: path.join(workFolder, project, resourceType, filename),
         engine,
         historyFilename,
         dataUrl
@@ -331,6 +331,27 @@ export function registerFilesystemIPC(ipcMain) {
       }
 
       console.warn(`[FS] read-resource: not found ${safeName}.* in ${resourceDir}`)
+      return { success: false, error: 'File not found' }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 6b. fs:get-resource-path (경로만 반환, 파일 읽지 않음 — 메모리 최적화)
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:get-resource-path', async (_event, { workFolder, project, resourceType, name }) => {
+    try {
+      const safeName = String(name).replace(/[^a-zA-Z0-9\uAC00-\uD7A3_-]/g, '_')
+      const resourceDir = path.join(workFolder, project, resourceType)
+
+      for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm']) {
+        const filePath = path.join(resourceDir, `${safeName}.${ext}`)
+        if (await pathExists(filePath)) {
+          return { success: true, path: filePath }
+        }
+      }
+
       return { success: false, error: 'File not found' }
     } catch (error) {
       return { success: false, error: error.message }
@@ -641,6 +662,93 @@ export function registerFilesystemIPC(ipcMain) {
 
       await fs.rm(projectPath, { recursive: true, force: true })
 
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 19. fs:save-style-thumbnail — 스타일 프리셋 썸네일 저장 (전역 캐시)
+  //     저장 위치: {userData}/style-thumbnails/{presetId}.png
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:save-style-thumbnail', async (_event, { presetId, data }) => {
+    try {
+      const thumbDir = path.join(app.getPath('userData'), 'style-thumbnails')
+      await fs.mkdir(thumbDir, { recursive: true })
+
+      // base64 데이터에서 prefix 제거
+      const base64Data = data.replace(/^data:image\/\w+;base64,/, '')
+      const buffer = Buffer.from(base64Data, 'base64')
+      const filePath = path.join(thumbDir, `${presetId}.png`)
+      await fs.writeFile(filePath, buffer)
+
+      return { success: true, path: filePath }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 20. fs:load-style-thumbnails — 저장된 모든 썸네일 로드
+  //     반환: { [presetId]: dataUrl }
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:load-style-thumbnails', async () => {
+    try {
+      const thumbDir = path.join(app.getPath('userData'), 'style-thumbnails')
+
+      // 폴더 없으면 빈 결과
+      if (!(await pathExists(thumbDir))) {
+        return { success: true, thumbnails: {} }
+      }
+
+      const files = await fs.readdir(thumbDir)
+      const thumbnails = {}
+
+      for (const file of files) {
+        if (!file.endsWith('.png')) continue
+        const presetId = file.replace('.png', '')
+        const filePath = path.join(thumbDir, file)
+        const buffer = await fs.readFile(filePath)
+        thumbnails[presetId] = `data:image/png;base64,${buffer.toString('base64')}`
+      }
+
+      return { success: true, thumbnails }
+    } catch (error) {
+      return { success: false, error: error.message, thumbnails: {} }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 21. fs:check-style-thumbnails — 썸네일 존재 여부 확인
+  //     반환: 존재하는 presetId 배열
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:check-style-thumbnails', async () => {
+    try {
+      const thumbDir = path.join(app.getPath('userData'), 'style-thumbnails')
+
+      if (!(await pathExists(thumbDir))) {
+        return { success: true, ids: [] }
+      }
+
+      const files = await fs.readdir(thumbDir)
+      const ids = files
+        .filter(f => f.endsWith('.png'))
+        .map(f => f.replace('.png', ''))
+
+      return { success: true, ids }
+    } catch (error) {
+      return { success: false, error: error.message, ids: [] }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 22. fs:delete-style-thumbnail — 개별 썸네일 삭제
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:delete-style-thumbnail', async (_event, { presetId }) => {
+    try {
+      const filePath = path.join(app.getPath('userData'), 'style-thumbnails', `${presetId}.png`)
+      await fs.unlink(filePath)
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }

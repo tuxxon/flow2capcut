@@ -2,12 +2,14 @@
  * SceneList Component - 목록 탭 (시간 + 자막 + 미디어 선택 + 히스토리)
  */
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useI18n } from '../hooks/useI18n'
-import { formatTime, getRatioClass } from '../utils/formatters'
+import { formatTime, getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
 import { UI } from '../config/defaults'
 import SceneDetailModal from './SceneDetailModal'
 import VideoDetailModal from './VideoDetailModal'
+import TagBatchModal from './TagBatchModal'
 import './SceneList.css'
 
 // 태그 매칭 여부 체크 (콤마, 세미콜론, 콜론 지원)
@@ -46,7 +48,17 @@ function resolveExportMedia(scene) {
   return 'image'
 }
 
-function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, onShowDetail, onShowVideoDetail, references }) {
+function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, onShowDetail, onShowVideoDetail, references, onOpenTag }) {
+  const rowRef = useRef(null)
+  const [hoverPreview, setHoverPreview] = useState(null)
+
+  // 생성 중이면 자동 스크롤
+  useEffect(() => {
+    if (scene.status === 'generating' && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [scene.status])
+
   const statusIcon = {
     pending: '⏳',
     generating: '⚙️',
@@ -64,14 +76,17 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
   const isSelected = (type) => activeMedia === type ? 'selected' : ''
 
   // 미디어 개수 (선택 UI 필요 여부)
-  const mediaCount = [scene.image, scene.videoT2V, scene.videoI2V].filter(Boolean).length
+  const hasImage = hasImageData(scene)
+  const imgSrc = resolveImageSrc(scene)
+  const mediaCount = [hasImage, scene.videoT2V, scene.videoI2V].filter(Boolean).length
 
-  // 매칭 상태 아이콘 (커스텀 툴팁)
-  const MatchIndicator = ({ match }) => {
+  // 매칭 상태 아이콘 (클릭 가능 — 태그 선택 모달 열기)
+  const MatchIndicator = ({ match, tagType }) => {
     if (!match) return null
+    const handleClick = () => onOpenTag?.(tagType, index)
     if (match.allMatched) {
       return (
-        <span className="tag-match-indicator matched">
+        <span className="tag-match-indicator matched clickable" onClick={handleClick}>
           ✓
           <span className="tag-tooltip matched">
             {t('sceneList.tagMatched')}: {match.matchedTags.join(', ')}
@@ -80,7 +95,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
       )
     }
     return (
-      <span className="tag-match-indicator unmatched">
+      <span className="tag-match-indicator unmatched clickable" onClick={handleClick}>
         ✗
         <span className="tag-tooltip unmatched">
           {t('sceneList.tagUnmatched')}: {match.unmatchedTags.join(', ')}
@@ -173,7 +188,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
   }
 
   return (
-    <tr className={`scene-row status-${scene.status}`}>
+    <tr ref={rowRef} className={`scene-row status-${scene.status}`}>
       <td className="col-id">
         {index + 1}
       </td>
@@ -228,7 +243,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
             title={t('sceneList.characterTitle')}
             className={charMatch ? (charMatch.allMatched ? 'matched' : 'unmatched') : ''}
           />
-          <MatchIndicator match={charMatch} />
+          <MatchIndicator match={charMatch} tagType="character" />
         </div>
         <div className="tag-input-wrapper">
           <input
@@ -240,7 +255,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
             title={t('sceneList.backgroundTitle')}
             className={sceneMatch ? (sceneMatch.allMatched ? 'matched' : 'unmatched') : ''}
           />
-          <MatchIndicator match={sceneMatch} />
+          <MatchIndicator match={sceneMatch} tagType="scene" />
         </div>
         <div className="tag-input-wrapper">
           <input
@@ -252,7 +267,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
             title={t('sceneList.styleTitle')}
             className={styleMatch ? (styleMatch.allMatched ? 'matched' : 'unmatched') : ''}
           />
-          <MatchIndicator match={styleMatch} />
+          <MatchIndicator match={styleMatch} tagType="style" />
         </div>
       </td>
 
@@ -260,7 +275,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
       <td className="col-media">
         <div className="media-selector">
           {/* 이미지 */}
-          {scene.image && (
+          {hasImage && (
             <div
               className={`media-thumb ${isSelected('image')} clickable`}
               onClick={(e) => {
@@ -274,7 +289,15 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
               onDoubleClick={() => onShowDetail(scene)}
               title={`IMG${activeMedia === 'image' ? ' ✓' : ''}`}
             >
-              <img src={scene.image} alt={`Scene ${index + 1}`} />
+              <img
+                src={imgSrc}
+                alt={`Scene ${index + 1}`}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setHoverPreview({ src: imgSrc, x: rect.right + 8, y: rect.top })
+                }}
+                onMouseLeave={() => setHoverPreview(null)}
+              />
               {mediaCount > 1 && <span className="media-label">IMG</span>}
             </div>
           )}
@@ -365,6 +388,20 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
           ✕
         </button>
       </td>
+
+      {/* 호버 풍선 프리뷰 */}
+      {hoverPreview && createPortal(
+        <div
+          className="ref-hover-balloon"
+          style={{
+            left: Math.min(hoverPreview.x, window.innerWidth - 420),
+            top: Math.max(0, Math.min(hoverPreview.y, window.innerHeight - 400))
+          }}
+        >
+          <img src={hoverPreview.src} alt="preview" />
+        </div>,
+        document.body
+      )}
     </tr>
   )
 }
@@ -386,6 +423,27 @@ export default function SceneList({
   const { t } = useI18n()
   const [detailModal, setDetailModal] = useState({ open: false, scene: null })
   const [videoDetailModal, setVideoDetailModal] = useState({ open: false, video: null })
+  // tagBatchModal: null | { type: 'character'|'scene'|'style', sceneIndex?: number }
+  const [tagBatchModal, setTagBatchModal] = useState(null)
+
+  // 태그 적용 (single / batch 공통)
+  const handleTagBatchApply = (field, value, startIdx, endIdx) => {
+    for (let i = startIdx; i <= endIdx; i++) {
+      if (scenes[i]) {
+        onUpdate(scenes[i].id, { [field]: value })
+      }
+    }
+    setTagBatchModal(null)
+  }
+
+  // 캐릭터/씬: 개별(single), 스타일: 일괄(batch)
+  const openTag = (type, sceneIndex) => {
+    if (type === 'style') {
+      setTagBatchModal({ type }) // batch 모드 (범위 지정)
+    } else {
+      setTagBatchModal({ type, sceneIndex }) // single 모드
+    }
+  }
 
   // 이미지 상세 모달 열기
   const handleShowDetail = (scene) => {
@@ -461,7 +519,17 @@ export default function SceneList({
               <th className="col-id">#</th>
               <th className="col-time">{t('sceneList.time')}</th>
               <th className="col-subtitle">{t('sceneList.subtitle')}</th>
-              <th className="col-tags">{t('sceneList.tags')}</th>
+              <th className="col-tags">
+                {t('sceneList.tags')}
+                {references.some(r => r.type === 'style') && (
+                  <button
+                    className="btn-style-tag-batch"
+                    onClick={() => setTagBatchModal({ type: 'style' })}
+                    title={t('sceneList.batchStyleTag')}
+                    disabled={disabled}
+                  >🎨</button>
+                )}
+              </th>
               <th className="col-media">{t('sceneList.media')}</th>
               <th className="col-actions"></th>
             </tr>
@@ -480,6 +548,7 @@ export default function SceneList({
                 onShowDetail={handleShowDetail}
                 onShowVideoDetail={handleShowVideoDetail}
                 references={references}
+                onOpenTag={openTag}
               />
             ))}
           </tbody>
@@ -522,6 +591,20 @@ export default function SceneList({
           onClose={() => setVideoDetailModal({ open: false, video: null })}
           t={t}
           projectName={projectName}
+        />
+      )}
+
+      {/* 태그 선택/일괄 적용 모달 */}
+      {tagBatchModal && (
+        <TagBatchModal
+          tagType={tagBatchModal.type}
+          mode={tagBatchModal.sceneIndex != null ? 'single' : 'batch'}
+          sceneIndex={tagBatchModal.sceneIndex}
+          scenes={scenes}
+          references={references}
+          onApply={handleTagBatchApply}
+          onClose={() => setTagBatchModal(null)}
+          t={t}
         />
       )}
     </div>

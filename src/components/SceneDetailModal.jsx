@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { fileSystemAPI } from '../hooks/useFileSystem'
-import { formatTime, getRatioClass } from '../utils/formatters'
+import { formatTime, getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
 import { STYLE_PRESETS, UI, RESOURCE } from '../config/defaults'
 import { toast } from './Toast'
 import Modal from './Modal'
@@ -127,15 +127,15 @@ export default function SceneDetailModal({
         {/* 왼쪽: 이미지 + 폼 */}
         <div className="ref-detail-main">
           {/* 이미지 미리보기 */}
-          <div className={`ref-detail-preview ${ratioClass} ${!editData.image ? 'empty' : ''}`}>
+          <div className={`ref-detail-preview ${ratioClass} ${!hasImageData(editData) ? 'empty' : ''}`}>
             {isGenerating ? (
               <div className="ref-uploading">
                 <span className="spinner">⏳</span>
                 <span>{t('sceneDetail.generatingStatus')}</span>
               </div>
-            ) : editData.image ? (
+            ) : hasImageData(editData) ? (
               <img
-                src={editData.image}
+                src={resolveImageSrc(editData)}
                 alt={`Scene ${scene.id}`}
                 onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
               />
@@ -343,7 +343,7 @@ export default function SceneDetailModal({
               {histories.map((hist, idx) => (
                 <div 
                   key={hist.filename}
-                  className={`history-item ${editData.image === hist.data ? 'selected' : ''}`}
+                  className={`history-item ${(editData.image && editData.image === hist.data) || (editData.imagePath && hist.filePath && editData.imagePath === hist.filePath) ? 'selected' : ''}`}
                   onClick={() => handleRestoreHistory(hist)}
                   title={new Date(hist.lastModified).toLocaleString()}
                 >

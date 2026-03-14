@@ -16,30 +16,29 @@ async function loadProjectWithImages(projectName) {
   const refCount = (result.data.references || []).length
   console.log(`[ProjectData] Loading ${sceneCount} scenes, ${refCount} refs from project.json`)
 
-  // scenes 이미지 파일에서 로드
-  const scenesWithImages = await Promise.all(
+  // scenes: 절대 파일 경로 확보 (base64 로드 안 함 — 메모리 최적화)
+  const isAbsolutePath = (p) => p && (p.startsWith('/') || /^[A-Z]:\\/i.test(p))
+  const scenesWithPaths = await Promise.all(
     (result.data.scenes || []).map(async (scene) => {
-      if (scene.id && !scene.image) {
-        const imgResult = await fileSystemAPI.readImage(projectName, scene.id)
-        if (imgResult.success) {
-          return { ...scene, image: imgResult.data }
-        } else {
-          console.warn(`[ProjectData] ❌ Image NOT found for ${scene.id}:`, imgResult.error)
+      // imagePath가 없거나 상대 경로이면 절대 경로 재확인
+      if (scene.id && !isAbsolutePath(scene.imagePath)) {
+        const pathResult = await fileSystemAPI.getResourcePath(projectName, 'scenes', scene.id)
+        if (pathResult.success) {
+          return { ...scene, image: null, imagePath: pathResult.path }
         }
       }
       return scene
     })
   )
 
-  // references 이미지 파일에서 로드
-  const refsWithImages = await Promise.all(
+  // references: 절대 파일 경로 확보 (base64 로드 안 함 — 메모리 최적화)
+  const refsWithPaths = await Promise.all(
     (result.data.references || []).map(async (ref) => {
-      if (ref.name && !ref.data) {
-        const imgResult = await fileSystemAPI.readReference(projectName, ref.name)
-        if (imgResult.success) {
-          return { ...ref, data: imgResult.data }
-        } else {
-          console.warn(`[ProjectData] ❌ Ref image NOT found for ${ref.name}:`, imgResult.error)
+      // filePath가 없거나 상대 경로이면 절대 경로 재확인
+      if (ref.name && !isAbsolutePath(ref.filePath)) {
+        const pathResult = await fileSystemAPI.getResourcePath(projectName, 'references', ref.name)
+        if (pathResult.success) {
+          return { ...ref, data: null, filePath: pathResult.path }
         }
       }
       return ref
@@ -47,10 +46,10 @@ async function loadProjectWithImages(projectName) {
   )
 
   // 진단 로그
-  const withImages = scenesWithImages.filter(s => s.image).length
-  const withSubtitles = scenesWithImages.filter(s => s.subtitle).length
-  const withMediaId = scenesWithImages.filter(s => s.mediaId).length
-  console.log(`[ProjectData] ✅ Loaded: ${withImages}/${sceneCount} images, ${withSubtitles}/${sceneCount} subtitles, ${withMediaId}/${sceneCount} mediaIds`)
+  const withImages = scenesWithPaths.filter(s => s.image || s.imagePath).length
+  const withSubtitles = scenesWithPaths.filter(s => s.subtitle).length
+  const withMediaId = scenesWithPaths.filter(s => s.mediaId).length
+  console.log(`[ProjectData] ✅ Loaded: ${withImages}/${sceneCount} images (path-only), ${withSubtitles}/${sceneCount} subtitles, ${withMediaId}/${sceneCount} mediaIds`)
 
   // videoScenes 비디오 파일에서 로드 (새 명명 t2v_N 우선, 기존 vscene_N 폴백)
   const videoScenesWithMedia = await Promise.all(
@@ -107,7 +106,7 @@ async function loadProjectWithImages(projectName) {
     item.status === 'generating' ? { ...item, status: 'pending', generatingStartedAt: undefined } : item
 
   // ── 완성된 비디오 → 씬에 동기화 (videoT2V / videoI2V) ──
-  const finalScenes = scenesWithImages.map(resetGenerating)
+  const finalScenes = scenesWithPaths.map(resetGenerating)
   const finalVideoScenes = videoScenesWithMedia.map(resetGenerating)
   const finalFramePairs = framePairsWithMedia.map(resetGenerating)
 
@@ -135,7 +134,7 @@ async function loadProjectWithImages(projectName) {
 
   return {
     scenes: finalScenes,
-    references: refsWithImages,
+    references: refsWithPaths,
     videoScenes: finalVideoScenes,
     framePairs: finalFramePairs,
   }
@@ -213,7 +212,7 @@ export function useProjectData({
         setFramePairs?.(loaded.framePairs || [])
         setSettings(s => ({ ...s, projectName: prevProjectName }))
         console.log('[App] Auto-restore complete:', prevProjectName,
-          `(${loaded.scenes.filter(s => s.image).length} images, ${loaded.scenes.filter(s => s.subtitle).length} subtitles)`)
+          `(${loaded.scenes.filter(s => s.image || s.imagePath).length} images, ${loaded.scenes.filter(s => s.subtitle).length} subtitles)`)
       }
       // 복원 완료 — auto-save 허용 (약간의 딜레이로 불필요한 auto-save 방지)
       setTimeout(() => {

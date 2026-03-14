@@ -141,6 +141,13 @@
       "prompt_en": "Chibi style, cute, big head, small body, kawaii"
     },
     {
+      "id": "sd-character",
+      "name_ko": "SD 캐릭터",
+      "name_en": "SD Character",
+      "category": "animation",
+      "prompt_en": "Super deformed SD character style, 2-3 head-to-body ratio, large expressive head, tiny cute body, chibi figurine look, bold outlines, colorful, anime figure collectible style"
+    },
+    {
       "id": "makoto-shinkai",
       "name_ko": "신카이 마코토",
       "name_en": "Makoto Shinkai",

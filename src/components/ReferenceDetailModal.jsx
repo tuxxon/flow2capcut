@@ -4,12 +4,14 @@
 
 import { useState, useEffect } from 'react'
 import { REFERENCE_TYPES, STYLE_PRESETS, RESOURCE } from '../config/defaults'
+import { resolveImageSrc, hasImageData } from '../utils/formatters'
 import { useImageUpload } from '../hooks/useImageUpload'
 import { fileSystemAPI } from '../hooks/useFileSystem'
 import { toast } from './Toast'
 import Modal from './Modal'
+import StylePicker from './StylePicker'
 
-export default function ReferenceDetailModal({ reference, index, onUpdate, onUpload, onClose, onGenerate, isGenerating, t, projectName }) {
+export default function ReferenceDetailModal({ reference, index, onUpdate, onUpload, onClose, onGenerate, isGenerating, t, isKo, projectName, thumbnails = {} }) {
   const [editData, setEditData] = useState({ ...reference })
   const [showStyleDropdown, setShowStyleDropdown] = useState(false)
   const [histories, setHistories] = useState([])
@@ -21,12 +23,13 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
     setEditData(prev => ({
       ...prev,
       data: reference.data,
+      filePath: reference.filePath,
       mediaId: reference.mediaId,
       caption: reference.caption
     }))
     // 히스토리 재로드 트리거
     setShouldReloadHistory(n => n + 1)
-  }, [reference.data, reference.mediaId])
+  }, [reference.data, reference.filePath, reference.mediaId])
   
   const imageUpload = useImageUpload({
     uploadToFlow: onUpload,
@@ -110,16 +113,28 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
     onClose()
   }
   
-  // 스타일 선택 핸들러
-  const handleStyleSelect = (style) => {
+  // 스타일 선택 핸들러 (StylePicker에서 preset:ID 형식으로 옴)
+  const handleStylePickerSelect = (id) => {
+    if (!id || !id.startsWith('preset:')) {
+      // 선택 해제
+      setEditData(prev => ({ ...prev, name: '', prompt: '', data: null, description: '' }))
+      return
+    }
+    const presetId = id.replace('preset:', '')
+    const style = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+    if (!style) return
     setEditData(prev => ({
       ...prev,
       name: style.name_ko,
       prompt: style.prompt_en,
-      description: style.name_en
+      description: style.name_en,
+      data: thumbnails[presetId] || prev.data // 썸네일 이미지 즉시 반영
     }))
-    setShowStyleDropdown(false)
   }
+
+  // 현재 editData.name에 해당하는 preset ID 찾기
+  const currentPresetId = STYLE_PRESETS?.styles?.find(s => s.name_ko === editData.name)?.id
+  const selectedStylePickerId = currentPresetId ? `preset:${currentPresetId}` : null
   
   const typeInfo = REFERENCE_TYPES.find(t => t.value === editData.type) || REFERENCE_TYPES[0]
   const isStyle = editData.type === 'style'
@@ -177,52 +192,42 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
       footer={footer}
     >
       <div className="ref-detail-layout">
-        {/* 왼쪽: 기존 내용 */}
         <div className="ref-detail-main">
-          {/* 스타일 타입일 때 안내 메시지 */}
-          {isStyle && (
-            <div className="style-info-box">
-              <span className="style-icon">🎨</span>
-              <span>{t('reference.styleTextOnly')}</span>
-            </div>
-          )}
-          
-          {/* 이미지 영역 - 스타일이 아니거나, 스타일이면서 이미지 있을 때 */}
-          {(!isStyle || editData.data) && (
-            <>
-              <input {...imageUpload.getInputProps()} />
-              
-              <div 
-                className={`ref-detail-preview ${imageUpload.isDragOver ? 'drag-over' : ''} ${!editData.data ? 'empty' : ''}`}
-                {...(isGenerating ? {} : imageUpload.getDropZoneProps())}
-              >
-                {(imageUpload.isUploading || isGenerating) ? (
-                  <div className="ref-uploading">
-                    <span className="spinner">⏳</span>
-                    <span>{isGenerating ? t('reference.generating') : t('reference.uploading')}</span>
-                  </div>
-                ) : editData.data ? (
-                  <>
-                    <img
-                      src={editData.data}
-                      alt={editData.name || 'Reference'}
-                      onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
-                    />
+          <>
+            <input {...imageUpload.getInputProps()} />
+
+            <div
+              className={`ref-detail-preview ${imageUpload.isDragOver ? 'drag-over' : ''} ${!hasImageData(editData) ? 'empty' : ''}`}
+              {...(isGenerating ? {} : isStyle ? {} : imageUpload.getDropZoneProps())}
+            >
+              {(imageUpload.isUploading || isGenerating) ? (
+                <div className="ref-uploading">
+                  <span className="spinner">⏳</span>
+                  <span>{isGenerating ? t('reference.generating') : t('reference.uploading')}</span>
+                </div>
+              ) : hasImageData(editData) ? (
+                <>
+                  <img
+                    src={resolveImageSrc(editData)}
+                    alt={editData.name || 'Reference'}
+                    onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
+                  />
+                  {!isStyle && (
                     <div className="preview-overlay">
                       <span>📷 {t('reference.clickToChange')}</span>
                     </div>
-                  </>
-                ) : (
-                  <div className="ref-placeholder">
-                    <span className="icon">{typeInfo.label.split(' ')[0]}</span>
-                    <span>{t('reference.upload')}</span>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          
-          {/* 이름 - 스타일 타입일 때 드롭다운 */}
+                  )}
+                </>
+              ) : (
+                <div className="ref-placeholder" onClick={isStyle ? () => setShowStyleDropdown(true) : undefined}>
+                  <span className="icon">{typeInfo.label.split(' ')[0]}</span>
+                  <span>{isStyle ? t('reference.selectStyle') : t('reference.upload')}</span>
+                </div>
+              )}
+            </div>
+          </>
+
+          {/* 이름 — 스타일이면 클릭 시 StylePicker 팝업 */}
           <div className="form-group">
             <label className="label-with-copy">
               {t('reference.name')}
@@ -236,43 +241,14 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
               )}
             </label>
             {isStyle ? (
-              <div className="style-dropdown-wrapper">
-                <button
-                  type="button"
-                  className="style-dropdown-btn"
-                  onClick={() => setShowStyleDropdown(!showStyleDropdown)}
-                >
-                  <span>{editData.name || t('reference.selectStyle')}</span>
-                  <span className="dropdown-arrow">{showStyleDropdown ? '▲' : '▼'}</span>
-                </button>
-
-                {showStyleDropdown && (
-                  <div className="style-dropdown-menu">
-                    {STYLE_PRESETS.categories.map(cat => (
-                      <div key={cat.id} className="style-category">
-                        <div className="style-category-header">
-                          {cat.icon} {cat.name_ko}
-                        </div>
-                        <div className="style-category-items">
-                          {STYLE_PRESETS.styles
-                            .filter(s => s.category === cat.id)
-                            .map(style => (
-                              <div
-                                key={style.id}
-                                className={`style-option ${editData.name === style.name_ko ? 'selected' : ''}`}
-                                onClick={() => handleStyleSelect(style)}
-                              >
-                                {style.name_ko}
-                                <span className="style-option-en">{style.name_en}</span>
-                              </div>
-                            ))
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                className="style-dropdown-btn"
+                onClick={() => setShowStyleDropdown(true)}
+              >
+                <span>{editData.name || t('reference.selectStyle')}</span>
+                <span className="dropdown-arrow">▼</span>
+              </button>
             ) : (
               <input
                 type="text"
@@ -282,16 +258,16 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
               />
             )}
           </div>
-          
+
           {/* 타입 */}
           <div className="form-group">
             <label>{t('reference.type')}</label>
-            <select 
+            <select
               value={editData.type}
               onChange={(e) => {
                 const typeInfo = REFERENCE_TYPES.find(t => t.value === e.target.value)
-                setEditData({ 
-                  ...editData, 
+                setEditData({
+                  ...editData,
                   type: e.target.value,
                   category: typeInfo?.category || 'MEDIA_CATEGORY_SUBJECT'
                 })
@@ -302,7 +278,7 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
               ))}
             </select>
           </div>
-          
+
           {/* 프롬프트 */}
           <div className="form-group">
             <label className="label-with-copy">
@@ -322,9 +298,10 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
               onChange={(e) => setEditData({ ...editData, prompt: e.target.value })}
               placeholder={t('reference.promptPlaceholder')}
               rows={4}
+              readOnly={isStyle}
             />
           </div>
-          
+
           {/* 상태 정보 */}
           <div className="ref-detail-status">
             {(editData.mediaId || imageSize) && (
@@ -355,16 +332,16 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
             )}
           </div>
         </div>
-        
+
         {/* 오른쪽: 히스토리 */}
         {histories.length > 0 && (
           <div className="ref-detail-history">
             <div className="history-header">📜 {t('reference.history')}</div>
             <div className="history-list">
               {histories.map((hist, idx) => (
-                <div 
+                <div
                   key={hist.filename}
-                  className={`history-thumb ${editData.data === hist.data ? 'selected' : ''}`}
+                  className={`history-thumb ${(editData.data && editData.data === hist.data) || (editData.filePath && hist.filePath && editData.filePath === hist.filePath) ? 'selected' : ''}`}
                   onClick={() => handleRestoreHistory(hist)}
                   title={`${new Date(hist.lastModified).toLocaleString()} - ${t('common.clickToRestore')}`}
                 >
@@ -375,6 +352,28 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
           </div>
         )}
       </div>
+
+      {/* StylePicker 팝업 */}
+      {showStyleDropdown && (
+        <div className="style-picker-overlay" onClick={() => setShowStyleDropdown(false)}>
+          <div className="style-picker-popup" onClick={e => e.stopPropagation()}>
+            <div className="style-picker-popup-header">
+              <span>🎨 {t('reference.selectStyle')}</span>
+              <button onClick={() => setShowStyleDropdown(false)}>✕</button>
+            </div>
+            <StylePicker
+              selectedId={selectedStylePickerId}
+              onSelect={(id) => {
+                handleStylePickerSelect(id)
+                setShowStyleDropdown(false)
+              }}
+              thumbnails={thumbnails}
+              t={t}
+              isKo={isKo}
+            />
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }

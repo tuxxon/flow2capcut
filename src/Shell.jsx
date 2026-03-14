@@ -68,6 +68,12 @@ function ShellContent() {
     setIsDragging(true)
   }, [])
 
+  // 더블클릭 → 50:50 리셋
+  const handleDoubleClick = useCallback(() => {
+    setSplitRatio(DEFAULT_RATIO)
+    window.electronAPI?.updateSplit?.({ ratio: DEFAULT_RATIO })
+  }, [])
+
   useEffect(() => {
     if (!isDragging) return
     const horizontal = isHorizontalSplit(layoutMode)
@@ -175,6 +181,7 @@ function ShellContent() {
         className="split-resizer"
         style={getResizerStyle()}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
       >
         <div className="split-resizer-handle" />
       </div>

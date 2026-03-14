@@ -410,6 +410,24 @@ export const fileSystemAPI = {
   },
 
   /**
+   * Get file path only (no base64 read) — 메모리 최적화용
+   */
+  async getResourcePath(projectName, resourceType, name) {
+    try {
+      const workFolder = localStorage.getItem('workFolderPath')
+      if (!workFolder) return { success: false, error: 'not_set' }
+      return await window.electronAPI.getResourcePath({
+        workFolder,
+        project: projectName,
+        resourceType,
+        name
+      })
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  },
+
+  /**
    * Read a file by exact filename within a resource folder.
    * Strips the extension and delegates to readResource.
    */

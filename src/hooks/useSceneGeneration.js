@@ -78,7 +78,7 @@ export function useSceneGeneration({ settings, scenes, scenesHook, flowAPI, open
         }
 
         scenesHook.updateScene(sceneId, {
-          image: imageData,
+          image: imagePath ? null : imageData,  // 파일 저장 성공 시 메모리 해제
           imagePath,
           mediaId,
           image_size: imageSize,

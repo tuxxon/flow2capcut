@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, shell, protocol, net } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
@@ -93,23 +93,24 @@ function updateBounds() {
   }
 
   const { width, height } = mainWindow.getContentBounds()
+  const GAP = 3  // 리사이저 바 절반 (6px / 2) — Flow 뷰와 App 사이 gap
 
   if (layoutMode === 'split-left') {
     // Flow 왼쪽, App 오른쪽
     const splitPos = Math.round(width * splitRatio)
-    flowView.setBounds({ x: 0, y: 0, width: splitPos, height })
+    flowView.setBounds({ x: 0, y: 0, width: splitPos - GAP, height })
   } else if (layoutMode === 'split-right') {
     // Flow 오른쪽, App 왼쪽
     const splitPos = Math.round(width * splitRatio)
-    flowView.setBounds({ x: width - splitPos, y: 0, width: splitPos, height })
+    flowView.setBounds({ x: width - splitPos + GAP, y: 0, width: splitPos - GAP, height })
   } else if (layoutMode === 'split-top') {
     // Flow 상단, App 하단
     const splitPos = Math.round(height * splitRatio)
-    flowView.setBounds({ x: 0, y: 0, width, height: splitPos })
+    flowView.setBounds({ x: 0, y: 0, width, height: splitPos - GAP })
   } else if (layoutMode === 'split-bottom') {
     // Flow 하단, App 상단
     const splitPos = Math.round(height * splitRatio)
-    flowView.setBounds({ x: 0, y: height - splitPos, width, height: splitPos })
+    flowView.setBounds({ x: 0, y: height - splitPos + GAP, width, height: splitPos - GAP })
   }
 }
 
@@ -122,7 +123,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false  // 로컬 file:// 이미지 로드 허용
     }
   })
 
@@ -915,8 +917,28 @@ const domDeps = {
 }
 registerDomIPC(ipcMain, domDeps)
 
+// === Custom Protocol: local-resource:// ===
+// 로컬 파일을 렌더러에서 안전하게 로드하기 위한 커스텀 프로토콜
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'local-resource',
+  privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true, secure: true }
+}])
+
 // === App Lifecycle ===
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // local-resource:// 프로토콜 핸들러 등록
+  protocol.handle('local-resource', (request) => {
+    // URL: local-resource://host/absolute/path/to/file
+    // decodeURIComponent로 한글 경로 등 처리
+    let filePath = decodeURIComponent(new URL(request.url).pathname)
+    // Windows: /C:/path → C:/path
+    if (process.platform === 'win32' && filePath.startsWith('/')) {
+      filePath = filePath.slice(1)
+    }
+    return net.fetch(`file://${filePath}`)
+  })
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   app.quit()

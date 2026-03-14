@@ -126,7 +126,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
 
         updateScene(scene.id, {
           status: 'done',
-          image: imageData,
+          image: saveResult.success ? null : imageData,  // 파일 저장 성공 시 메모리 해제
           imagePath: saveResult.success ? saveResult.path : null,
           mediaId,
           image_size: imageSize
@@ -323,8 +323,8 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
     }
     
     // 레퍼런스 업로드 (순차 - API 안정성)
-    console.log('[Automation] References check:', references.map(r => ({ name: r.name, hasData: !!r.data, mediaId: r.mediaId })))
-    const refsToUpload = references.filter(r => r.data && !r.mediaId)
+    console.log('[Automation] References check:', references.map(r => ({ name: r.name, hasData: !!(r.data || r.filePath), mediaId: r.mediaId })))
+    const refsToUpload = references.filter(r => (r.data || r.filePath) && !r.mediaId)
     console.log('[Automation] Refs to upload:', refsToUpload.length)
     if (refsToUpload.length > 0) {
       setStatus('uploading')
@@ -340,6 +340,15 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
         setStatusMessage(t('status.uploadingRefs', { current: i + 1, total: refsToUpload.length }))
         
         let base64Data = ref.data
+        // data가 없으면 filePath에서 읽기
+        if (!base64Data && ref.filePath) {
+          const fileResult = await fileSystemAPI.readFileByPath(ref.filePath)
+          if (fileResult.success) base64Data = fileResult.data
+        }
+        if (!base64Data) {
+          console.warn('Reference data not available:', ref.name)
+          continue
+        }
         if (base64Data.startsWith('data:')) {
           base64Data = base64Data.split(',')[1]
         }

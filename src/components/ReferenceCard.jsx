@@ -2,9 +2,10 @@
  * ReferenceCard - 레퍼런스 카드 컴포넌트
  */
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { REFERENCE_TYPES } from '../config/defaults'
-import { getRatioClass } from '../utils/formatters'
+import { getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
 
 export default function ReferenceCard({ 
   reference, 
@@ -18,9 +19,18 @@ export default function ReferenceCard({
   isGenerating, 
   onShowDetail 
 }) {
+  const cardRef = useRef(null)
   const fileInputRef = useRef(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [hoverPreview, setHoverPreview] = useState(null) // { x, y }
+
+  // 생성 시작되면 카드가 보이도록 자동 스크롤
+  useEffect(() => {
+    if (isGenerating && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    }
+  }, [isGenerating])
   
   const ratioClass = getRatioClass(aspectRatio)
   
@@ -90,9 +100,11 @@ export default function ReferenceCard({
   const typeInfo = REFERENCE_TYPES.find(t => t.value === reference.type) || REFERENCE_TYPES[0]
   const hasPrompt = reference.prompt && reference.prompt.trim().length > 0
   const isBusy = isUploading || isGenerating
-  
+  const hasRefImage = hasImageData(reference)
+  const refImgSrc = resolveImageSrc(reference)
+
   return (
-    <div className={`reference-card ${reference.data ? 'has-image' : ''} ${isBusy ? 'uploading' : ''} ${isDragOver ? 'drag-over' : ''} ${ratioClass}`}>
+    <div ref={cardRef} className={`reference-card ${hasRefImage ? 'has-image' : ''} ${isBusy ? 'uploading' : ''} ${isDragOver ? 'drag-over' : ''} ${ratioClass}`}>
       <input 
         type="file"
         ref={fileInputRef}
@@ -127,7 +139,7 @@ export default function ReferenceCard({
         className="ref-image-area"
         onClick={() => {
           if (isBusy) return
-          if (reference.data) {
+          if (hasRefImage) {
             onShowDetail(index) // 이미지 있으면 상세카드
           } else {
             fileInputRef.current?.click() // 없으면 파일 선택
@@ -142,8 +154,16 @@ export default function ReferenceCard({
             <span className="spinner">⏳</span>
             <span>{isGenerating ? t('reference.generating') : t('reference.uploading')}</span>
           </div>
-        ) : reference.data ? (
-          <img src={reference.data} alt={reference.name || 'Reference'} />
+        ) : hasRefImage ? (
+          <img
+            src={refImgSrc}
+            alt={reference.name || 'Reference'}
+            onMouseEnter={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              setHoverPreview({ x: rect.right + 8, y: rect.top })
+            }}
+            onMouseLeave={() => setHoverPreview(null)}
+          />
         ) : (
           <div className="ref-placeholder">
             <span className="icon">{typeInfo.label.split(' ')[0]}</span>
@@ -167,7 +187,7 @@ export default function ReferenceCard({
       </button>
       
       {/* 프롬프트가 있으면 생성 버튼 표시 */}
-      {hasPrompt && !reference.data && (
+      {hasPrompt && !hasRefImage && (
         <button 
           className="btn-generate-ref"
           onClick={(e) => {
@@ -185,6 +205,20 @@ export default function ReferenceCard({
         <div className="ref-caption" title={reference.caption}>
           {reference.caption.substring(0, 50)}...
         </div>
+      )}
+
+      {/* 호버 풍선 프리뷰 */}
+      {hoverPreview && hasRefImage && createPortal(
+        <div
+          className="ref-hover-balloon"
+          style={{
+            left: Math.min(hoverPreview.x, window.innerWidth - 420),
+            top: Math.max(0, Math.min(hoverPreview.y, window.innerHeight - 400))
+          }}
+        >
+          <img src={refImgSrc} alt="preview" />
+        </div>,
+        document.body
       )}
     </div>
   )

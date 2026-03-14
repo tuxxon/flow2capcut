@@ -314,6 +314,38 @@ export function getRatioClass(aspectRatio) {
 }
 
 // ============================================================
+// 이미지 소스 해결
+// ============================================================
+
+/**
+ * scene/reference에서 표시할 이미지 src 반환
+ * 파일 경로(imagePath/filePath)가 있으면 file:// 프로토콜, 없으면 base64 fallback
+ * scene: { image, imagePath }, reference: { data, filePath }
+ */
+export function resolveImageSrc(item) {
+  if (!item) return null
+  // 파일 경로 우선 (scene.imagePath 또는 reference.filePath) — 절대 경로만
+  const filePath = item.imagePath || item.filePath
+  if (filePath && filePath.startsWith('/')) {
+    return `file://${filePath}`
+  }
+  // Windows 절대 경로 (C:\...)
+  if (filePath && /^[A-Z]:\\/i.test(filePath)) {
+    return `file:///${filePath.replace(/\\/g, '/')}`
+  }
+  // fallback: 메모리 base64 (scene.image 또는 reference.data)
+  return item.image || item.data || null
+}
+
+/**
+ * 이미지 데이터가 있는지 확인 (파일 경로 또는 메모리 데이터)
+ */
+export function hasImageData(item) {
+  if (!item) return false
+  return !!(item.imagePath || item.filePath || item.image || item.data)
+}
+
+// ============================================================
 // 랜덤 생성
 // ============================================================
 

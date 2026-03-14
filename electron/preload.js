@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getResourceFolder: (params) => ipcRenderer.invoke('fs:get-resource-folder', params),
   saveResource: (params) => ipcRenderer.invoke('fs:save-resource', params),
   readResource: (params) => ipcRenderer.invoke('fs:read-resource', params),
+  getResourcePath: (params) => ipcRenderer.invoke('fs:get-resource-path', params),
   readFileByPath: (params) => ipcRenderer.invoke('fs:read-file-by-path', params),
   saveProjectData: (params) => ipcRenderer.invoke('fs:save-project-data', params),
   loadProjectData: (params) => ipcRenderer.invoke('fs:load-project-data', params),
@@ -52,6 +53,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restoreFromHistory: (params) => ipcRenderer.invoke('fs:restore-from-history', params),
   saveToHistory: (params) => ipcRenderer.invoke('fs:save-to-history', params),
   deleteHistory: (params) => ipcRenderer.invoke('fs:delete-history', params),
+  saveStyleThumbnail: (params) => ipcRenderer.invoke('fs:save-style-thumbnail', params),
+  loadStyleThumbnails: () => ipcRenderer.invoke('fs:load-style-thumbnails'),
+  checkStyleThumbnails: () => ipcRenderer.invoke('fs:check-style-thumbnails'),
+  deleteStyleThumbnail: (params) => ipcRenderer.invoke('fs:delete-style-thumbnail', params),
 
   // CapCut
   detectCapcutPath: () => ipcRenderer.invoke('capcut:detect-path'),

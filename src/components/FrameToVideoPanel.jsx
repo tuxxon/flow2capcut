@@ -15,6 +15,7 @@
  */
 
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
+import { resolveImageSrc } from '../utils/formatters'
 
 /** 초시계 아이콘 — 초침이 실시간 회전 */
 function StopwatchIcon({ size = 16 }) {
@@ -86,7 +87,7 @@ function SceneSelect({
   const selectedLabel = gallerySelected
     ? `📂 ${galleryMediaId.substring(0, 16)}...`
     : selected ? getLabel(selected) : (placeholder || '—')
-  const selectedThumb = gallerySelected?.url || selected?.image || null
+  const selectedThumb = gallerySelected?.url || (selected ? resolveImageSrc(selected) : null)
 
   return (
     <div className={`scene-dropdown${open ? ' open' : ''}${selectDisabled ? ' disabled' : ''}`} ref={ref}>
@@ -122,7 +123,7 @@ function SceneSelect({
 
           {/* 씬 옵션들 */}
           {options.map(scene => {
-            const thumb = scene.image || null
+            const thumb = resolveImageSrc(scene)
             return (
               <div
                 key={scene.id}

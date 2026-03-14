@@ -2,12 +2,14 @@
  * ReferencePanel - 레퍼런스 이미지 관리 패널
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { REFERENCE_TYPES } from '../config/defaults'
 import { useI18n } from '../hooks/useI18n'
 import { getRatioClass } from '../utils/formatters'
 import ReferenceCard from './ReferenceCard'
 import ReferenceDetailModal from './ReferenceDetailModal'
+import StylePicker from './StylePicker'
 import './ReferencePanel.css'
 
 export default function ReferencePanel({
@@ -16,14 +18,37 @@ export default function ReferencePanel({
   onUpload,
   onGenerate,
   onGenerateAll,
+  onStopGenerateAll,
   onClearAll,
   aspectRatio = '16:9',
   generatingRefs = [],
-  projectName
+  stoppingRefs = false,
+  selectedStyleRefId,
+  onStyleRefChange,
+  projectName,
+  thumbnails = {},
+  thumbnailGenerating = false,
+  thumbnailStopping = false,
+  thumbnailProgress = { current: 0, total: 0 },
+  onGenerateThumbnails,
+  onStopThumbnailGeneration,
+  onDeleteThumbnail
 }) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState(false)
   const [detailIndex, setDetailIndex] = useState(null)
+  const [showBatchWizard, setShowBatchWizard] = useState(false)
+
+  // 위저드 열릴 때 Flow 네이티브 뷰 숨기기
+  useEffect(() => {
+    if (!showBatchWizard) return
+    window.electronAPI?.setModalVisible?.({ visible: true })
+    return () => window.electronAPI?.setModalVisible?.({ visible: false })
+  }, [showBatchWizard])
+
+  // 스타일 레퍼런스 목록 (업로드된 Style 카드)
+  const styleRefs = references.filter(r => r.type === 'style' && r.mediaId)
+  const isKo = t('common.cancel') === '취소'  // 간단한 언어 감지
   
   const handleAdd = () => {
     const maxId = references.length > 0 
@@ -94,17 +119,24 @@ export default function ReferencePanel({
                 🗑️
               </button>
             )}
-            {/* 일괄 생성 버튼 */}
-            {generatableRefs.length > 0 && (
+            {/* 일괄 생성 / 중단 버튼 */}
+            {isGenerating ? (
+              <button
+                className={`btn-generate-all btn-stop ${stoppingRefs ? 'stopping' : ''}`}
+                onClick={onStopGenerateAll}
+                disabled={stoppingRefs}
+              >
+                {stoppingRefs
+                  ? `⏳ ${t('reference.stopping')}...`
+                  : `⏹ ${t('reference.stop')} (${generatingRefs.length}/${generatableRefs.length + generatingRefs.length})`
+                }
+              </button>
+            ) : generatableRefs.length > 0 && (
               <button
                 className="btn-generate-all"
-                onClick={onGenerateAll}
-                disabled={isGenerating}
+                onClick={() => setShowBatchWizard(true)}
               >
-                {isGenerating
-                  ? `⏳ ${generatingRefs.length}/${generatableRefs.length}`
-                  : `🎨 ${t('reference.generateAll')} (${generatableRefs.length})`
-                }
+                🎨 {t('reference.generateAll')} ({generatableRefs.length})
               </button>
             )}
           </div>
@@ -136,6 +168,46 @@ export default function ReferencePanel({
         </div>
       )}
       
+      {/* 일괄 생성 위저드 (Portal → document.body) */}
+      {showBatchWizard && createPortal(
+        <div className="batch-wizard-overlay" onClick={() => !thumbnailGenerating && setShowBatchWizard(false)}>
+          <div className="batch-wizard" onClick={e => e.stopPropagation()}>
+            <div className="batch-wizard-header">
+              <span>🎨 {t('reference.batchWizardTitle')}</span>
+              <button className="btn-close-wizard" onClick={() => !thumbnailGenerating && setShowBatchWizard(false)} disabled={thumbnailGenerating}>✕</button>
+            </div>
+            <div className="batch-wizard-body">
+              <StylePicker
+                selectedId={selectedStyleRefId}
+                onSelect={(id) => onStyleRefChange?.(id)}
+                thumbnails={thumbnails}
+                uploadedStyleRefs={styleRefs}
+                generating={thumbnailGenerating}
+                stopping={thumbnailStopping}
+                progress={thumbnailProgress}
+                onGenerateThumbnails={onGenerateThumbnails}
+                onStopGenerating={onStopThumbnailGeneration}
+                onDeleteThumbnail={onDeleteThumbnail}
+                t={t}
+                isKo={isKo}
+              />
+              <div className="batch-wizard-summary">
+                {t('reference.batchCount', { count: generatableRefs.length })}
+              </div>
+            </div>
+            <div className="batch-wizard-footer">
+              <button className="btn-wizard-cancel" onClick={() => setShowBatchWizard(false)} disabled={thumbnailGenerating}>
+                {t('common.cancel')}
+              </button>
+              <button className="btn-wizard-start" onClick={() => { setShowBatchWizard(false); onGenerateAll() }} disabled={thumbnailGenerating}>
+                🎨 {t('reference.batchStart')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* 상세 모달 */}
       {detailIndex !== null && references[detailIndex] && (
         <ReferenceDetailModal
@@ -147,7 +219,9 @@ export default function ReferencePanel({
           isGenerating={generatingRefs.includes(detailIndex)}
           onClose={() => setDetailIndex(null)}
           t={t}
+          isKo={isKo}
           projectName={projectName}
+          thumbnails={thumbnails}
         />
       )}
     </div>

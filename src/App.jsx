@@ -12,6 +12,7 @@ import { useVideoScenes } from './hooks/useVideoScenes'
 import { useI18n } from './hooks/useI18n'
 import { useProjectData } from './hooks/useProjectData'
 import { useReferenceGeneration } from './hooks/useReferenceGeneration'
+import { useStyleThumbnails } from './hooks/useStyleThumbnails'
 import { useSceneGeneration } from './hooks/useSceneGeneration'
 import { useExport } from './hooks/useExport'
 import { generateProjectName } from './utils/formatters'
@@ -101,6 +102,7 @@ function App() {
   const [showReferences, setShowReferences] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [selectedScene, setSelectedScene] = useState(null) // 상세 모달용 선택된 씬
+  const [selectedStyleRefId, setSelectedStyleRefId] = useState(null) // 레퍼런스 생성 시 적용할 스타일
   const [selectedVideo, setSelectedVideo] = useState(null) // 비디오 상세 모달용
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() => {
     const saved = localStorage.getItem('flow2capcut_bottomPanelHeight')
@@ -158,9 +160,12 @@ function App() {
     openSettings
   })
 
+  // Style Thumbnails
+  const { thumbnails: styleThumbnails, generating: thumbnailGenerating, stopping: thumbnailStopping, progress: thumbnailProgress, generateThumbnails, stopGenerating: stopThumbnailGeneration, deleteThumbnail } = useStyleThumbnails(flowAPI)
+
   // Reference 생성
-  const { generatingRefs, handleGenerateRef, handleGenerateAllRefs } = useReferenceGeneration({
-    settings, references, setReferences, flowAPI, addPendingSave, openSettings, t
+  const { generatingRefs, stoppingRefs, handleGenerateRef, handleGenerateAllRefs, stopGenerateAllRefs } = useReferenceGeneration({
+    settings, references, setReferences, flowAPI, addPendingSave, openSettings, t, selectedStyleRefId, styleThumbnails
   })
 
   // Scene 재생성
@@ -352,15 +357,8 @@ function App() {
 
   // Handle start — 활성 탭에 따라 이미지/비디오 생성 모드 분기
   const handleStart = async () => {
-    // 이미지 자동화 또는 비디오 자동화 중이면 일시정지/재개
-    if (isRunning) {
-      togglePause()
-      return
-    }
-    if (videoAutomation.isRunning) {
-      videoAutomation.togglePause()
-      return
-    }
+    // 이미 실행 중이면 무시 (중지는 별도 버튼)
+    if (isRunning || videoAutomation.isRunning) return
 
     // 폴더 설정 확인
     const folderCheck = await checkFolderPermission(settings, openSettings, t)
@@ -514,7 +512,6 @@ function App() {
 
   // 어느 자동화든 실행 중이면 true
   const anyRunning = isRunning || videoAutomation.isRunning
-  const anyPaused = isPaused || videoAutomation.isPaused
   const currentProgress = videoAutomation.isRunning ? videoAutomation.progress : progress
   const currentStatus = videoAutomation.isRunning ? videoAutomation.status : status
   const currentStatusMessage = videoAutomation.isRunning ? videoAutomation.statusMessage : statusMessage
@@ -524,7 +521,7 @@ function App() {
       <Header
         onSettings={() => openSettings()}
         onExport={handleExportClick}
-        hasImages={scenes.some(s => s.image)}
+        hasImages={scenes.some(s => s.image || s.imagePath)}
         getAccessToken={flowAPI.getAccessToken}
         authReady={authReady}
         projectName={settings.projectName}
@@ -624,9 +621,20 @@ function App() {
             onUpload={flowAPI.uploadReference}
             onGenerate={handleGenerateRef}
             onGenerateAll={handleGenerateAllRefs}
+            onStopGenerateAll={stopGenerateAllRefs}
             onClearAll={() => setReferences([])}
             generatingRefs={generatingRefs}
+            stoppingRefs={stoppingRefs}
+            selectedStyleRefId={selectedStyleRefId}
+            onStyleRefChange={setSelectedStyleRefId}
             projectName={settings.projectName}
+            thumbnails={styleThumbnails}
+            thumbnailGenerating={thumbnailGenerating}
+            thumbnailStopping={thumbnailStopping}
+            thumbnailProgress={thumbnailProgress}
+            onGenerateThumbnails={() => generateThumbnails(null, t)}
+            onStopThumbnailGeneration={stopThumbnailGeneration}
+            onDeleteThumbnail={deleteThumbnail}
           />
         )}
 
@@ -710,21 +718,28 @@ function App() {
 
             return (
               <>
-                <button
-                  className={`btn-primary ${anyRunning ? (anyPaused ? 'paused' : 'running') : ''} ${canExport ? 'half' : ''}`}
-                  onClick={handleStart}
-                  disabled={
-                    (activeTab === 'text' && scenes.length === 0) ||
-                    (activeTab === 'video-text' && videoScenes.length === 0) ||
-                    (activeTab === 'frame-to-video' && framePairs.length === 0) ||
-                    (activeTab === 'list')
-                  }
-                >
-                  {anyRunning
-                    ? (anyPaused ? `▶️ ${t('actions.resume')}` : `⏸️ ${t('actions.pause')}`)
-                    : activeTab === 'text' ? `✨ ${t('actions.start')}` : `🎬 ${t('actions.start')}`
-                  }
-                </button>
+                {anyRunning ? (
+                  <button
+                    className={`btn-danger ${canExport ? 'half' : ''}`}
+                    onClick={handleStop}
+                    disabled={isStopping}
+                  >
+                    {isStopping ? `⏳ ${t('status.stopping')}` : `⏹️ ${t('actions.stop')}`}
+                  </button>
+                ) : (
+                  <button
+                    className={`btn-primary ${canExport ? 'half' : ''}`}
+                    onClick={handleStart}
+                    disabled={
+                      (activeTab === 'text' && scenes.length === 0) ||
+                      (activeTab === 'video-text' && videoScenes.length === 0) ||
+                      (activeTab === 'frame-to-video' && framePairs.length === 0) ||
+                      (activeTab === 'list')
+                    }
+                  >
+                    {activeTab === 'text' ? `✨ ${t('actions.start')}` : `🎬 ${t('actions.start')}`}
+                  </button>
+                )}
 
                 {canExport && (
                   <button
@@ -738,12 +753,6 @@ function App() {
               </>
             )
           })()}
-
-          {anyRunning && (
-            <button className="btn-danger" onClick={handleStop} disabled={isStopping}>
-              ⏹️ {isStopping ? t('status.stopping') : t('actions.stop')}
-            </button>
-          )}
 
           {!anyRunning && scenes.some(s => s.status === 'error') && (
             <button className="btn-secondary" onClick={retryErrors}>
