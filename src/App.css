@@ -1058,6 +1058,7 @@ html, body {
   to { stroke-dashoffset: -92; }
 }
 
+
 @keyframes infinity-dance {
   0%   { transform: perspective(80px) rotateX(0deg) rotateY(0deg) rotate(-6deg); }
   20%  { transform: perspective(80px) rotateX(15deg) rotateY(-10deg) rotate(4deg); }

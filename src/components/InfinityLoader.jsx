@@ -26,20 +26,21 @@ export default function InfinityLoader({ size = 36 }) {
       <path
         d={path}
         fill="none"
-        stroke={`url(#${gradId})`}
+        stroke="#60a5fa"
         strokeWidth="2.5"
         strokeLinecap="round"
-        strokeDasharray="12 80"
+        strokeDasharray="10 36 10 36"
         className="infinity-light"
+        filter={`url(#${gradId})`}
       />
       <defs>
-        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="transparent" />
-          <stop offset="40%" stopColor="#60a5fa" />
-          <stop offset="50%" stopColor="#ffffff" />
-          <stop offset="60%" stopColor="#60a5fa" />
-          <stop offset="100%" stopColor="transparent" />
-        </linearGradient>
+        <filter id={gradId} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="glow" />
+          <feMerge>
+            <feMergeNode in="glow" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
     </svg>
   )
