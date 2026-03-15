@@ -436,45 +436,87 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       return
     }
     
-    // 레퍼런스 업로드 (순차 - API 안정성)
-    console.log('[Automation] References check:', references.map(r => ({ name: r.name, hasData: !!(r.data || r.filePath), mediaId: r.mediaId })))
-    const refsToUpload = references.filter(r => (r.data || r.filePath) && !r.mediaId)
+    // 레퍼런스 업로드 (비동기 슬라이딩 윈도우 — 1초 간격 투입, 최대 5개 동시)
+    console.log('[Automation] References check:', references.map(r => ({ name: r.name, hasData: !!(r.data || r.filePath || r.imagePath), mediaId: r.mediaId })))
+    const refsToUpload = references.filter(r => (r.data || r.filePath || r.imagePath) && !r.mediaId)
     console.log('[Automation] Refs to upload:', refsToUpload.length)
     if (refsToUpload.length > 0) {
       setStatus('uploading')
+      let uploadedCount = 0
       setProgress({ current: 0, total: refsToUpload.length, percent: 0 })
       setStatusMessage(t('status.uploadingRefs', { current: 0, total: refsToUpload.length }))
 
-      for (let i = 0; i < refsToUpload.length; i++) {
-        if (stopRequestedRef.current) break
+      const MAX_CONCURRENT = 5
+      const INTERVAL = 1000
+      const MAX_RETRIES = 2
 
-        const ref = refsToUpload[i]
-        const percent = Math.round(((i + 1) / refsToUpload.length) * 100)
-        setProgress({ current: i + 1, total: refsToUpload.length, percent })
-        setStatusMessage(t('status.uploadingRefs', { current: i + 1, total: refsToUpload.length }))
-        
+      const uploadOne = async (ref) => {
         let base64Data = ref.data
-        // data가 없으면 filePath에서 읽기
-        if (!base64Data && ref.filePath) {
-          const fileResult = await fileSystemAPI.readFileByPath(ref.filePath)
+        const pathToRead = ref.filePath || ref.imagePath
+        if (!base64Data && pathToRead) {
+          const fileResult = await fileSystemAPI.readFileByPath(pathToRead)
           if (fileResult.success) base64Data = fileResult.data
         }
         if (!base64Data) {
-          console.warn('Reference data not available:', ref.name)
-          continue
+          console.warn('Reference data not available:', ref.name, { data: !!ref.data, filePath: ref.filePath, imagePath: ref.imagePath, pathToRead })
+          return
         }
         if (base64Data.startsWith('data:')) {
           base64Data = base64Data.split(',')[1]
         }
-        
-        const result = await uploadReference(base64Data, ref.category)
-        if (result.success) {
-          ref.mediaId = result.mediaId
-          ref.caption = result.caption || ref.caption
-        } else {
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const result = await uploadReference(base64Data, ref.category)
+          if (result.success) {
+            ref.mediaId = result.mediaId
+            ref.caption = result.caption || ref.caption
+            return
+          }
+          if (result.error?.includes('429') && attempt < MAX_RETRIES) {
+            const backoff = (attempt + 1) * 2000 + Math.random() * 1000
+            console.warn(`[Automation] Rate limited on ${ref.name}, retry in ${Math.round(backoff)}ms`)
+            await new Promise(r => setTimeout(r, backoff))
+            continue
+          }
           console.warn('Reference upload failed:', ref.name, result.error)
+          return
         }
       }
+
+      // 슬라이딩 윈도우: 1초마다 1개 투입, 동시 5개 제한
+      await new Promise((resolve) => {
+        let nextIndex = 0
+        let activeCount = 0
+        let completedCount = 0
+
+        const tryLaunch = () => {
+          while (activeCount < MAX_CONCURRENT && nextIndex < refsToUpload.length && !stopRequestedRef.current) {
+            const ref = refsToUpload[nextIndex++]
+            activeCount++
+            uploadOne(ref).finally(() => {
+              activeCount--
+              completedCount++
+              uploadedCount = completedCount
+              const percent = Math.round((uploadedCount / refsToUpload.length) * 100)
+              setProgress({ current: uploadedCount, total: refsToUpload.length, percent })
+              setStatusMessage(t('status.uploadingRefs', { current: uploadedCount, total: refsToUpload.length }))
+              if (completedCount >= refsToUpload.length || stopRequestedRef.current) {
+                resolve()
+              }
+            })
+          }
+        }
+
+        // 1초 간격으로 투입
+        tryLaunch() // 첫 번째 즉시
+        const timer = setInterval(() => {
+          if (nextIndex >= refsToUpload.length || stopRequestedRef.current) {
+            clearInterval(timer)
+            return
+          }
+          tryLaunch()
+        }, INTERVAL)
+      })
     }
     
     // 씬 처리 (DOM 모드 — 반드시 순차)

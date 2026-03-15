@@ -442,7 +442,9 @@ export function registerFilesystemIPC(ipcMain) {
   // ----------------------------------------------------------
   ipcMain.handle('fs:read-file-by-path', async (_event, { workFolder, filePath }) => {
     try {
-      const fullPath = path.join(workFolder, filePath)
+      // 절대 경로면 그대로 사용, 상대 경로면 workFolder와 합침
+      const isAbsolute = filePath && (filePath.startsWith('/') || /^[A-Z]:\\/i.test(filePath))
+      const fullPath = isAbsolute ? filePath : path.join(workFolder, filePath)
 
       if (!(await pathExists(fullPath))) {
         return { success: false, error: 'File not found' }
