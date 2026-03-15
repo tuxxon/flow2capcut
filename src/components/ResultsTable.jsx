@@ -3,7 +3,7 @@
  * Supports mediaType: 'image' | 'video' | 'frame-pair'
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../hooks/useI18n'
 import { getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
@@ -72,6 +72,15 @@ export default function ResultsTable({
 }) {
   const { t } = useI18n()
   const [hoverPreview, setHoverPreview] = useState(null)
+  const generatingRowRef = useRef(null)
+
+  // 생성 중인 행으로 자동 스크롤
+  const generatingId = (items || scenes || []).find(item => item.status === 'generating')?.id
+  useEffect(() => {
+    if (generatingId && generatingRowRef.current) {
+      generatingRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [generatingId])
 
   // backward compat: accept `scenes` as fallback for `items`
   const data = items || scenes || []
@@ -243,7 +252,7 @@ export default function ResultsTable({
         </thead>
         <tbody>
           {data.map((item, index) => (
-            <tr key={item.id} className={`status-${item.status} ${selectable && item.selected === false ? 'deselected' : ''}`}>
+            <tr key={item.id} ref={item.status === 'generating' ? generatingRowRef : null} className={`status-${item.status} ${selectable && item.selected === false ? 'deselected' : ''}`}>
               {selectable && (
                 <td className="col-check">
                   <input
