@@ -5,6 +5,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { STYLE_PRESETS } from '../config/defaults'
 import { resolveImageSrc, hasImageData } from '../utils/formatters'
+import { toFileUrl } from '../hooks/useStyleThumbnails'
 import './StylePicker.css'
 
 // 경과 시간 포맷 (mm:ss)
@@ -70,8 +71,10 @@ export default function StylePicker({
     return result
   }, [activeCategory, allStyles, searchQuery])
 
-  // 썸네일 미생성 프리셋 수
-  const missingCount = allStyles.filter(s => !thumbnails[s.id]).length
+  // 썸네일 미생성 수 (프리셋 + 이미지 없는 커스텀 스타일)
+  const missingPresetCount = allStyles.filter(s => !thumbnails[s.id]).length
+  const missingCustomCount = uploadedStyleRefs.filter(r => !hasImageData(r)).length
+  const missingCount = missingPresetCount + missingCustomCount
 
   return (
     <div className="style-picker">
@@ -172,7 +175,7 @@ export default function StylePicker({
               <div className="sp-thumb">
                 {thumb ? (
                   <img
-                    src={thumb}
+                    src={toFileUrl(thumb)}
                     alt={styleName}
                     loading="lazy"
                     onDoubleClick={(e) => {
@@ -218,7 +221,10 @@ export default function StylePicker({
             </button>
           </div>
         ) : missingCount > 0 ? (
-          <button className="sp-btn-generate" onClick={() => onGenerateThumbnails?.()}>
+          <button className="sp-btn-generate" onClick={() => {
+            const customMissing = uploadedStyleRefs.filter(r => !hasImageData(r))
+            onGenerateThumbnails?.(null, customMissing)
+          }}>
             🎨 {t('reference.generateThumbnails')} ({missingCount})
           </button>
         ) : null}
@@ -232,7 +238,7 @@ export default function StylePicker({
             left: Math.min(hoverPreview.x, window.innerWidth - 280)
           }}
         >
-          <img src={hoverPreview.thumb} alt="" />
+          <img src={toFileUrl(hoverPreview.thumb)} alt="" />
           <div className="sp-hover-name">{isKo ? hoverPreview.style.name_ko : hoverPreview.style.name_en}</div>
         </div>
       )}
@@ -246,7 +252,7 @@ export default function StylePicker({
               <button className="sp-preview-close" onClick={() => setPreviewStyle(null)}>✕</button>
             </div>
             <div className="sp-preview-image">
-              <img src={previewStyle.thumb} alt={isKo ? previewStyle.name_ko : previewStyle.name_en} />
+              <img src={toFileUrl(previewStyle.thumb)} alt={isKo ? previewStyle.name_ko : previewStyle.name_en} />
             </div>
             <div className="sp-preview-prompt">{previewStyle.prompt_en}</div>
           </div>

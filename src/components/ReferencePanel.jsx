@@ -74,7 +74,7 @@ export default function ReferencePanel({
   }, [batchStartedAt])
 
   // 스타일 레퍼런스 목록 (업로드된 Style 카드)
-  const styleRefs = references.filter(r => r.type === 'style' && r.mediaId)
+  const styleRefs = references.filter(r => r.type === 'style')
   const isKo = t('common.cancel') === '취소'  // 간단한 언어 감지
   
   const handleAdd = () => {

@@ -279,6 +279,10 @@
   cursor: pointer;
 }
 
+.btn-remove-wrap {
+  position: relative;
+}
+
 .btn-remove {
   background: none;
   border: none;
@@ -289,6 +293,41 @@
 
 .btn-remove:hover {
   color: var(--error-color);
+}
+
+.remove-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg-secondary, #1e1e2e);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.remove-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary, #eee);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.remove-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.remove-menu button:last-child:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
 }
 
 .ref-image-area {

@@ -67,6 +67,7 @@ export default function ResultsTable({
   onToggle,                 // (id) => void — 개별 선택 토글
   onToggleAll,              // () => void — 전체 선택 토글
   onPromptEdit,             // (id, newPrompt) => void — 프롬프트 인라인 편집
+  onClearMedia,             // (id) => void — 미디어만 제거
   disabled = false,         // 생성 중 편집 비활성화
 }) {
   const { t } = useI18n()
@@ -262,7 +263,16 @@ export default function ResultsTable({
                   title={t('headerExtra.clickToDetail')}
                 >
                   {hasMedia(item) ? (
-                    renderMedia(item, index)
+                    <>
+                      {renderMedia(item, index)}
+                      {onClearMedia && !disabled && (
+                        <button
+                          className="btn-clear-media"
+                          onClick={(e) => { e.stopPropagation(); onClearMedia(item.id) }}
+                          title={t('results.clearMedia') || '미디어 제거'}
+                        >✕</button>
+                      )}
+                    </>
                   ) : item.status === 'generating' ? (
                     <div className="generating-indicator">
                       <span className="spinner">⚙️</span>

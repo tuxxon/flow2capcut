@@ -161,6 +161,8 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     stop: '중단',
     stopping: '중단중',
     preparing: '준비중...',
+    clearImage: '이미지만 제거',
+    removeCard: '카드 제거',
     noStyle: '스타일 없음',
     styleRefHint: '생성 시 적용할 스타일 레퍼런스 선택',
     batchWizardTitle: '일괄 생성',
@@ -239,8 +241,9 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     video: '비디오',
     videoPreview: '비디오 미리보기',
     status: '상태',
+    clearMedia: '미디어 제거',
   },
-  
+
   // 설정
   settings: {
     title: '설정',

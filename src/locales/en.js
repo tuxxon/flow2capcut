@@ -161,6 +161,8 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     stop: 'Stop',
     stopping: 'Stopping',
     preparing: 'Preparing...',
+    clearImage: 'Clear Image Only',
+    removeCard: 'Remove Card',
     noStyle: 'No Style',
     styleRefHint: 'Select style reference to apply during generation',
     batchWizardTitle: 'Batch Generate',
@@ -239,8 +241,9 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     video: 'Video',
     videoPreview: 'Video Preview',
     status: 'Status',
+    clearMedia: 'Clear Media',
   },
-  
+
   // Settings
   settings: {
     title: 'Settings',

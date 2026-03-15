@@ -1,5 +1,7 @@
 /**
  * useStyleThumbnails - 스타일 프리셋 썸네일 생성/로드/캐싱
+ *
+ * 메모리 최적화: thumbnails에 filePath 저장, 표시 시 file:// 프로토콜 사용
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
@@ -11,7 +13,7 @@ const THUMBNAIL_PROMPT_PREFIX = 'A serene landscape with mountains and a river'
 // 1~3초 랜덤 딜레이
 const randomDelay = () => new Promise(r => setTimeout(r, 1000 + Math.random() * 2000))
 
-// 번들된 썸네일 fallback 로드 (public/style-thumbnails/) — 훅 밖 함수
+// 번들된 썸네일 fallback 로드 (public/style-thumbnails/) — blob URL 사용
 async function loadBundledThumbnails(existingIds = []) {
   const allStyles = STYLE_PRESETS?.styles || []
   const missingStyles = allStyles.filter(s => !existingIds.includes(s.id))
@@ -35,8 +37,28 @@ async function loadBundledThumbnails(existingIds = []) {
   return bundled
 }
 
+/**
+ * filePath → file:// URL 변환 (표시용)
+ */
+export function toFileUrl(pathOrUrl) {
+  if (!pathOrUrl) return null
+  // 이미 URL이면 그대로 (blob:, data:, file://)
+  if (pathOrUrl.startsWith('blob:') || pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('file://')) {
+    return pathOrUrl
+  }
+  // 절대 경로 → file:// (캐시 방지용 timestamp)
+  if (pathOrUrl.startsWith('/')) {
+    return `file://${pathOrUrl}?t=${Date.now()}`
+  }
+  // Windows 경로
+  if (/^[A-Z]:\\/i.test(pathOrUrl)) {
+    return `file:///${pathOrUrl.replace(/\\/g, '/')}?t=${Date.now()}`
+  }
+  return pathOrUrl
+}
+
 export function useStyleThumbnails(flowAPI) {
-  const [thumbnails, setThumbnails] = useState({})         // { presetId: dataUrl }
+  const [thumbnails, setThumbnails] = useState({})         // { presetId: filePath | blobUrl }
   const [generating, setGenerating] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [progress, setProgress] = useState({ current: 0, total: 0 })
@@ -49,27 +71,27 @@ export function useStyleThumbnails(flowAPI) {
 
   const loadThumbnails = useCallback(async () => {
     let loaded = {}
-    // 1) Electron IPC로 사용자 생성 썸네일 로드
+    // 1) Electron IPC로 사용자 생성 썸네일 경로 로드 (filePath)
     if (window.electronAPI?.loadStyleThumbnails) {
       try {
         const result = await window.electronAPI.loadStyleThumbnails()
         if (result.success && result.thumbnails) {
-          loaded = result.thumbnails
-          console.log('[StyleThumbnails] Loaded', Object.keys(loaded).length, 'user thumbnails')
+          loaded = result.thumbnails  // { presetId: filePath }
+          console.log('[StyleThumbnails] Loaded', Object.keys(loaded).length, 'user thumbnail paths')
         }
       } catch (e) {
         console.warn('[StyleThumbnails] IPC load failed:', e)
       }
     }
-    // 2) 없는 것은 번들 fallback
+    // 2) 없는 것은 번들 fallback (blob URL)
     const bundled = await loadBundledThumbnails(Object.keys(loaded))
-    const merged = { ...bundled, ...loaded }  // 사용자 생성분 우선
+    const merged = { ...bundled, ...loaded }  // 사용자 생성분(filePath) 우선
     setThumbnails(merged)
     console.log('[StyleThumbnails] Total:', Object.keys(merged).length, 'thumbnails')
   }, [])
 
-  // 썸네일 일괄 생성
-  const generateThumbnails = useCallback(async (presetIds, t) => {
+  // 썸네일 일괄 생성 (프리셋 + 커스텀 스타일 레퍼런스)
+  const generateThumbnails = useCallback(async (presetIds, customRefs, t) => {
     if (!flowAPI?.generateImageDOM) {
       toast.error('Flow API not available')
       return
@@ -81,7 +103,10 @@ export function useStyleThumbnails(flowAPI) {
       .filter(s => !thumbnails[s.id])
       .map(s => s.id)
 
-    if (targetIds.length === 0) {
+    const customTargets = customRefs || []
+    const totalCount = targetIds.length + customTargets.length
+
+    if (totalCount === 0) {
       toast.info(t?.('reference.thumbnailComplete') || 'All thumbnails generated')
       return
     }
@@ -89,14 +114,15 @@ export function useStyleThumbnails(flowAPI) {
     stopRequestedRef.current = false
     setStopping(false)
     setGenerating(true)
-    setProgress({ current: 0, total: targetIds.length, startedAt: Date.now() })
+    setProgress({ current: 0, total: totalCount, startedAt: Date.now() })
 
     let generated = 0
+    let stopped = false
 
+    // Phase 1: 프리셋 썸네일 생성
     for (const presetId of targetIds) {
       if (stopRequestedRef.current) {
-        console.log('[StyleThumbnails] Stop requested')
-        toast.info(t?.('reference.thumbnailStopped') || 'Thumbnail generation stopped')
+        stopped = true
         break
       }
 
@@ -104,7 +130,7 @@ export function useStyleThumbnails(flowAPI) {
       if (!preset) continue
 
       const prompt = `${THUMBNAIL_PROMPT_PREFIX}, ${preset.prompt_en}`
-      console.log(`[StyleThumbnails] Generating ${presetId}: ${prompt}`)
+      console.log(`[StyleThumbnails] Generating preset ${presetId}: ${prompt}`)
 
       try {
         const result = await flowAPI.generateImageDOM(prompt, [], { batchCount: 1 })
@@ -114,32 +140,74 @@ export function useStyleThumbnails(flowAPI) {
           const imageData = firstImage.base64 || firstImage
           const dataUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
 
-          // 파일 시스템에 저장
           if (window.electronAPI?.saveStyleThumbnail) {
-            await window.electronAPI.saveStyleThumbnail({ presetId, data: dataUrl })
+            const saveResult = await window.electronAPI.saveStyleThumbnail({ presetId, data: dataUrl })
+            if (saveResult.success && saveResult.path) {
+              setThumbnails(prev => ({ ...prev, [presetId]: saveResult.path }))
+            } else {
+              setThumbnails(prev => ({ ...prev, [presetId]: dataUrl }))
+            }
+          } else {
+            setThumbnails(prev => ({ ...prev, [presetId]: dataUrl }))
           }
-
-          // state 업데이트
-          setThumbnails(prev => ({ ...prev, [presetId]: dataUrl }))
           generated++
         } else {
           console.warn(`[StyleThumbnails] Failed to generate ${presetId}:`, result.error)
         }
       } catch (e) {
         console.error(`[StyleThumbnails] Error generating ${presetId}:`, e)
-        // 인증 에러면 중단
         if (e.message?.includes('401') || e.message?.includes('auth')) {
           toast.error(t?.('toast.authErrorStop') || 'Authentication error')
+          stopped = true
           break
         }
       }
 
       setProgress(prev => ({ ...prev, current: prev.current + 1 }))
+      await randomDelay()
+    }
 
-      // 랜덤 딜레이
-      if (presetId !== targetIds[targetIds.length - 1]) {
-        await randomDelay()
+    // Phase 2: 커스텀 스타일 레퍼런스 생성
+    const customResults = []
+    if (!stopped) {
+      for (const ref of customTargets) {
+        if (stopRequestedRef.current) {
+          stopped = true
+          break
+        }
+
+        if (!ref.prompt) continue
+
+        const prompt = `${THUMBNAIL_PROMPT_PREFIX}, ${ref.prompt}`
+        console.log(`[StyleThumbnails] Generating custom style "${ref.name}": ${prompt}`)
+
+        try {
+          const result = await flowAPI.generateImageDOM(prompt, [], { batchCount: 1 })
+
+          if (result.success && result.images?.length > 0) {
+            const firstImage = result.images[0]
+            const imageData = firstImage.base64 || firstImage
+            const dataUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
+            customResults.push({ refId: ref.id, data: dataUrl })
+            generated++
+          }
+        } catch (e) {
+          console.error(`[StyleThumbnails] Error generating custom "${ref.name}":`, e)
+          if (e.message?.includes('401') || e.message?.includes('auth')) {
+            toast.error(t?.('toast.authErrorStop') || 'Authentication error')
+            break
+          }
+        }
+
+        setProgress(prev => ({ ...prev, current: prev.current + 1 }))
+        if (ref !== customTargets[customTargets.length - 1]) {
+          await randomDelay()
+        }
       }
+    }
+
+    if (stopped) {
+      toast.info(t?.('reference.thumbnailStopped') || 'Thumbnail generation stopped')
     }
 
     setGenerating(false)
@@ -148,6 +216,8 @@ export function useStyleThumbnails(flowAPI) {
     if (generated > 0) {
       toast.success(t?.('reference.thumbnailComplete', { count: generated }) || `${generated} thumbnails generated`)
     }
+
+    return customResults  // 커스텀 스타일 결과 반환 → App에서 References 업데이트
   }, [flowAPI, thumbnails])
 
   const stopGenerating = useCallback(() => {

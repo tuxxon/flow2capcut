@@ -134,11 +134,22 @@ export default function SceneDetailModal({
                 <span>{t('sceneDetail.generatingStatus')}</span>
               </div>
             ) : hasImageData(editData) ? (
-              <img
-                src={resolveImageSrc(editData)}
-                alt={`Scene ${scene.id}`}
-                onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
-              />
+              <>
+                <img
+                  src={resolveImageSrc(editData)}
+                  alt={`Scene ${scene.id}`}
+                  onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
+                />
+                <button
+                  className="btn-clear-image"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditData(prev => ({ ...prev, image: null, imagePath: null }))
+                    setImageSize(null)
+                  }}
+                  title={t('reference.clearImage') || '이미지 제거'}
+                >✕</button>
+              </>
             ) : (
               <div className="ref-placeholder">
                 <span className="icon">🖼️</span>

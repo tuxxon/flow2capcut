@@ -212,6 +212,15 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
                     alt={editData.name || 'Reference'}
                     onLoad={(e) => setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight })}
                   />
+                  <button
+                    className="btn-clear-image"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditData(prev => ({ ...prev, data: null, filePath: null, mediaId: null, caption: null, dataStorage: null }))
+                      setImageSize(null)
+                    }}
+                    title={t('reference.clearImage') || '이미지 제거'}
+                  >✕</button>
                   {!isStyle && (
                     <div className="preview-overlay">
                       <span>📷 {t('reference.clickToChange')}</span>

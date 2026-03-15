@@ -277,6 +277,37 @@
   cursor: pointer;
 }
 
+/* 미디어 제거 버튼 */
+.btn-clear-media {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-cell:hover .btn-clear-media {
+  opacity: 1;
+}
+
+.btn-clear-media:hover {
+  background: #e53e3e;
+}
+
 .status-icon {
   font-size: 1.2rem;
 }

@@ -57,7 +57,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
 
     if (stopRequestedRef.current) return
 
-    updateScene(scene.id, { status: 'generating' })
+    updateScene(scene.id, { status: 'generating', generatingStartedAt: Date.now() })
 
     // 매칭되는 레퍼런스 찾기 (태그 기반)
     const allMatched = getMatchingReferences(scene)
@@ -298,7 +298,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       if (stopRequestedRef.current) break
 
       const scene = targetScenes[i]
-      updateScene(scene.id, { status: 'generating' })
+      updateScene(scene.id, { status: 'generating', generatingStartedAt: Date.now() })
       setStatusMessage(t('status.generatingScene', { ids: scene.id, current: completedCountRef.current, total }))
 
       // 매칭 레퍼런스

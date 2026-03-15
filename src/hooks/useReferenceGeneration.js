@@ -51,11 +51,18 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       let styledPrompt = ref.prompt
       if (ref.type !== 'style' && selectedStyleRefId) {
         if (selectedStyleRefId.startsWith('ref:')) {
-          // 업로드된 스타일 레퍼런스 → mediaId로 전달
+          // 업로드된 스타일 레퍼런스
           const refId = selectedStyleRefId.replace('ref:', '')
-          const styleRef = references.find(r => r.id == refId && r.type === 'style' && r.mediaId)
+          const styleRef = references.find(r => r.id == refId && r.type === 'style')
           if (styleRef) {
-            styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+            // mediaId가 있으면 이미지 레퍼런스로 전달
+            if (styleRef.mediaId) {
+              styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+            }
+            // 스타일 프롬프트를 생성 프롬프트에 합침
+            if (styleRef.prompt) {
+              styledPrompt = `${ref.prompt}, ${styleRef.prompt}`
+            }
           }
         } else if (selectedStyleRefId.startsWith('preset:')) {
           const presetId = selectedStyleRefId.replace('preset:', '')
@@ -66,16 +73,32 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
             let mediaId = presetMediaCache.current[presetId]
             if (!mediaId) {
               const thumbData = styleThumbnails[presetId]
-              const cleanBase64 = thumbData.split(',')[1] || thumbData
-              try {
-                const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
-                if (uploadResult.success) {
-                  mediaId = uploadResult.mediaId
-                  presetMediaCache.current[presetId] = mediaId
-                  console.log('[StyleRef] Preset thumbnail uploaded, mediaId:', mediaId)
+              let cleanBase64 = null
+              // filePath인 경우 파일에서 읽기 (메모리 최적화)
+              if (thumbData.startsWith('/') || /^[A-Z]:\\/i.test(thumbData)) {
+                try {
+                  const fileResult = await fileSystemAPI.readFileByPath(thumbData)
+                  if (fileResult.success) {
+                    cleanBase64 = fileResult.data?.split(',')[1] || fileResult.data
+                  }
+                } catch (e) {
+                  console.warn('[StyleRef] Failed to read thumbnail file:', e)
                 }
-              } catch (e) {
-                console.warn('[StyleRef] Preset thumbnail upload failed:', e)
+              } else {
+                // data URL 또는 blob URL fallback
+                cleanBase64 = thumbData.split(',')[1] || thumbData
+              }
+              if (cleanBase64) {
+                try {
+                  const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
+                  if (uploadResult.success) {
+                    mediaId = uploadResult.mediaId
+                    presetMediaCache.current[presetId] = mediaId
+                    console.log('[StyleRef] Preset thumbnail uploaded, mediaId:', mediaId)
+                  }
+                } catch (e) {
+                  console.warn('[StyleRef] Preset thumbnail upload failed:', e)
+                }
               }
             }
             if (mediaId) {
@@ -391,9 +414,14 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       if (ref.type !== 'style' && selectedStyleRefId) {
         if (selectedStyleRefId.startsWith('ref:')) {
           const refId = selectedStyleRefId.replace('ref:', '')
-          const styleRef = references.find(r => r.id == refId && r.type === 'style' && r.mediaId)
+          const styleRef = references.find(r => r.id == refId && r.type === 'style')
           if (styleRef) {
-            styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+            if (styleRef.mediaId) {
+              styleRefImages.push({ category: styleRef.category, mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+            }
+            if (styleRef.prompt) {
+              styledPrompt = `${ref.prompt}, ${styleRef.prompt}`
+            }
           }
         } else if (selectedStyleRefId.startsWith('preset:')) {
           const presetId = selectedStyleRefId.replace('preset:', '')
@@ -414,15 +442,30 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
       const presetId = selectedStyleRefId.replace('preset:', '')
       if (styleThumbnails?.[presetId] && !presetMediaCache.current[presetId]) {
         const thumbData = styleThumbnails[presetId]
-        const cleanBase64 = thumbData.split(',')[1] || thumbData
-        try {
-          const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
-          if (uploadResult.success) {
-            presetMediaCache.current[presetId] = uploadResult.mediaId
-            console.log('[GenerateAllRefs] Preset thumbnail pre-uploaded, mediaId:', uploadResult.mediaId)
+        let cleanBase64 = null
+        // filePath인 경우 파일에서 읽기
+        if (thumbData.startsWith('/') || /^[A-Z]:\\/i.test(thumbData)) {
+          try {
+            const fileResult = await fileSystemAPI.readFileByPath(thumbData)
+            if (fileResult.success) {
+              cleanBase64 = fileResult.data?.split(',')[1] || fileResult.data
+            }
+          } catch (e) {
+            console.warn('[GenerateAllRefs] Failed to read thumbnail file:', e)
           }
-        } catch (e) {
-          console.warn('[GenerateAllRefs] Preset thumbnail upload failed:', e)
+        } else {
+          cleanBase64 = thumbData.split(',')[1] || thumbData
+        }
+        if (cleanBase64) {
+          try {
+            const uploadResult = await flowAPI.uploadReference(cleanBase64, 'style')
+            if (uploadResult.success) {
+              presetMediaCache.current[presetId] = uploadResult.mediaId
+              console.log('[GenerateAllRefs] Preset thumbnail pre-uploaded, mediaId:', uploadResult.mediaId)
+            }
+          } catch (e) {
+            console.warn('[GenerateAllRefs] Preset thumbnail upload failed:', e)
+          }
         }
       }
     }

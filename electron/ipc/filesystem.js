@@ -769,8 +769,8 @@ export function registerFilesystemIPC(ipcMain) {
   })
 
   // ----------------------------------------------------------
-  // 20. fs:load-style-thumbnails — 저장된 모든 썸네일 로드
-  //     반환: { [presetId]: dataUrl }
+  // 20. fs:load-style-thumbnails — 저장된 모든 썸네일 경로 로드
+  //     반환: { [presetId]: filePath } (메모리 절약: base64 대신 파일 경로)
   // ----------------------------------------------------------
   ipcMain.handle('fs:load-style-thumbnails', async () => {
     try {
@@ -787,9 +787,7 @@ export function registerFilesystemIPC(ipcMain) {
       for (const file of files) {
         if (!file.endsWith('.png')) continue
         const presetId = file.replace('.png', '')
-        const filePath = path.join(thumbDir, file)
-        const buffer = await fs.readFile(filePath)
-        thumbnails[presetId] = `data:image/png;base64,${buffer.toString('base64')}`
+        thumbnails[presetId] = path.join(thumbDir, file)
       }
 
       return { success: true, thumbnails }

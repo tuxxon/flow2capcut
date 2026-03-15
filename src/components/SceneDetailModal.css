@@ -440,6 +440,34 @@
   opacity: 1;
 }
 
+.ref-detail-preview .btn-clear-image {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 5;
+}
+
+.ref-detail-preview:hover .btn-clear-image {
+  opacity: 1;
+}
+
+.ref-detail-preview .btn-clear-image:hover {
+  background: rgba(239, 68, 68, 0.9);
+}
+
 .ref-detail-preview .ref-placeholder {
   display: flex;
   flex-direction: column;

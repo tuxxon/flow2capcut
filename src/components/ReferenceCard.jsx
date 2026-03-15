@@ -7,23 +7,24 @@ import { createPortal } from 'react-dom'
 import { REFERENCE_TYPES } from '../config/defaults'
 import { getRatioClass, resolveImageSrc, hasImageData } from '../utils/formatters'
 
-export default function ReferenceCard({ 
-  reference, 
-  index, 
-  onUpdate, 
-  onRemove, 
-  onUpload, 
-  onGenerate, 
-  aspectRatio, 
-  t, 
-  isGenerating, 
-  onShowDetail 
+export default function ReferenceCard({
+  reference,
+  index,
+  onUpdate,
+  onRemove,
+  onUpload,
+  onGenerate,
+  aspectRatio,
+  t,
+  isGenerating,
+  onShowDetail
 }) {
   const cardRef = useRef(null)
   const fileInputRef = useRef(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hoverPreview, setHoverPreview] = useState(null) // { x, y }
+  const [showRemoveMenu, setShowRemoveMenu] = useState(false)
 
   // 생성 시작되면 카드가 보이도록 자동 스크롤
   useEffect(() => {
@@ -130,9 +131,27 @@ export default function ReferenceCard({
           ))}
         </select>
         
-        <button className="btn-remove" onClick={() => onRemove(index)} title={t('common.delete')}>
-          ✕
-        </button>
+        <div className="btn-remove-wrap">
+          <button className="btn-remove" onClick={() => {
+            if (hasRefImage) {
+              setShowRemoveMenu(prev => !prev)
+            } else {
+              onRemove(index)
+            }
+          }} title={t('common.delete')}>
+            ✕
+          </button>
+          {showRemoveMenu && (
+            <div className="remove-menu" onMouseLeave={() => setShowRemoveMenu(false)}>
+              <button onClick={() => { setShowRemoveMenu(false); onUpdate(index, { ...reference, data: null, filePath: null, mediaId: null, caption: null, dataStorage: null }) }}>
+                {t('reference.clearImage') || '이미지만 제거'}
+              </button>
+              <button onClick={() => { setShowRemoveMenu(false); onRemove(index) }}>
+                {t('reference.removeCard') || '카드 제거'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       
       <div 

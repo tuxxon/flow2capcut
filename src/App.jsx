@@ -668,7 +668,15 @@ function App() {
             thumbnailGenerating={thumbnailGenerating}
             thumbnailStopping={thumbnailStopping}
             thumbnailProgress={thumbnailProgress}
-            onGenerateThumbnails={() => generateThumbnails(null, t)}
+            onGenerateThumbnails={async (presetIds, customRefs) => {
+              const customResults = await generateThumbnails(presetIds, customRefs, t)
+              if (customResults?.length > 0) {
+                setReferences(prev => prev.map(ref => {
+                  const result = customResults.find(r => r.refId === ref.id)
+                  return result ? { ...ref, data: result.data, filePath: null, dataStorage: null } : ref
+                }))
+              }
+            }}
             onStopThumbnailGeneration={stopThumbnailGeneration}
             onDeleteThumbnail={deleteThumbnail}
           />
@@ -821,6 +829,7 @@ function App() {
               saveMode: settings.saveMode
             })}
             onShowDetail={(scene) => setSelectedScene(scene)}
+            onClearMedia={(id) => scenesHook.updateScene(id, { image: null, imagePath: null, filePath: null, data: null, status: 'pending' })}
           />
         )}
         {activeTab === 'video-text' && (
@@ -832,6 +841,7 @@ function App() {
             onToggle={videoScenesHook.toggleSelect}
             onToggleAll={videoScenesHook.toggleSelectAll}
             onPromptEdit={(id, newPrompt) => videoScenesHook.updateVideoScene(id, { prompt: newPrompt })}
+            onClearMedia={(id) => videoScenesHook.updateVideoScene(id, { video: null, status: 'pending' })}
             disabled={anyRunning}
           />
         )}
@@ -847,6 +857,7 @@ function App() {
               saveMode: settings.saveMode
             })}
             onShowDetail={(scene) => setSelectedScene(scene)}
+            onClearMedia={(id) => scenesHook.updateScene(id, { image: null, imagePath: null, filePath: null, data: null, status: 'pending' })}
           />
         )}
       </div>
