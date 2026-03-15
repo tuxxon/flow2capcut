@@ -397,6 +397,7 @@ function App() {
           concurrency: settings.concurrency || 2,
           imageBatchCount: settings.imageBatchCount || 1,
           imageUpscale: settings.imageUpscale || '2k',
+          selectedStyleRefId,
         }
 
         const errors = collectTagErrors(scenes, scenesHook.references)

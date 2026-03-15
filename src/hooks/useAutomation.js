@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { DEFAULTS, RESOURCE } from '../config/defaults'
+import { DEFAULTS, RESOURCE, STYLE_PRESETS } from '../config/defaults'
 import { fileSystemAPI } from './useFileSystem'
 import { getTimestamp, generateProjectName, getImageSizeFromBase64 } from '../utils/formatters'
 import { toast } from '../components/Toast'
@@ -48,7 +48,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
    * 단일 씬 처리
    */
   const processScene = async (scene, options) => {
-    const { projectName, saveMode, imageBatchCount, imageUpscale } = options
+    const { projectName, saveMode, imageBatchCount, imageUpscale, selectedStyleRefId = null } = options
 
     // 일시정지 대기
     while (pausedRef.current && !stopRequestedRef.current) {
@@ -79,6 +79,27 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
         matchedRefs.map(r => r.mediaId?.substring(0, 12)).join(', '))
     }
 
+    // 스타일 프롬프트 합치기
+    let styledPrompt = scene.prompt
+    if (selectedStyleRefId) {
+      if (selectedStyleRefId.startsWith('ref:')) {
+        const refId = selectedStyleRefId.replace('ref:', '')
+        const styleRef = references.find(r => r.id == refId && r.type === 'style')
+        if (styleRef?.prompt) {
+          styledPrompt = `${scene.prompt}, ${styleRef.prompt}`
+        }
+        if (styleRef?.mediaId && !matchedRefs.some(r => r.mediaId === styleRef.mediaId)) {
+          matchedRefs.push({ category: styleRef.category || 'style', mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+        }
+      } else if (selectedStyleRefId.startsWith('preset:')) {
+        const presetId = selectedStyleRefId.replace('preset:', '')
+        const preset = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+        if (preset?.prompt_en) {
+          styledPrompt = `${scene.prompt}, ${preset.prompt_en}`
+        }
+      }
+    }
+
     // 이미지 생성 (재시도 포함) — DOM 모드 + CDP 레퍼런스 주입
     let result
     let retries = 0
@@ -89,7 +110,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       if (stopRequestedRef.current && retries === 0) return
       if (stopRequestedRef.current && retries > 0) break  // 재시도 중이면 루프 탈출 → 이전 결과 처리
 
-      result = await generateImageDOM(scene.prompt, matchedRefs, { batchCount: imageBatchCount })
+      result = await generateImageDOM(styledPrompt, matchedRefs, { batchCount: imageBatchCount })
 
       if (result.success) break
 
@@ -266,10 +287,20 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
     }
 
     // 완료된 결과 수집
+    const ITEM_TIMEOUT = 120000 // 개별 아이템 2분 타임아웃
     const collectCompleted = async () => {
       const stillPending = []
       for (const item of pendingQueue) {
         if (stopRequestedRef.current) { stillPending.push(item); continue }
+        // 개별 타임아웃 체크
+        const elapsed = Date.now() - item.submittedAt
+        if (elapsed > ITEM_TIMEOUT) {
+          console.warn('[Automation] Scene', item.scene.id, 'timed out after', Math.round(elapsed / 1000), 's')
+          updateScene(item.scene.id, { status: 'error', error: 'Generation timeout' })
+          completedCountRef.current++
+          updateProgressMsg(completedCountRef.current)
+          continue
+        }
         try {
           const st = await checkGeneration(item.generationId)
           if (st.completed) {
@@ -283,6 +314,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
           }
         } catch (e) {
           console.error('[Automation] Check/collect error for scene', item.scene.id, ':', e.message)
+          // 에러가 연속되면 타임아웃에서 처리되므로 다시 pending에 넣음
           stillPending.push(item)
         }
       }
@@ -310,8 +342,31 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
         console.log('[Automation] Scene', scene.id, '→ injecting', matchedRefs.length, 'refs')
       }
 
+      // 스타일 프롬프트 합치기
+      let styledPrompt = scene.prompt
+      if (selectedStyleRefId) {
+        if (selectedStyleRefId.startsWith('ref:')) {
+          const refId = selectedStyleRefId.replace('ref:', '')
+          const styleRef = references.find(r => r.id == refId && r.type === 'style')
+          if (styleRef?.prompt) {
+            styledPrompt = `${scene.prompt}, ${styleRef.prompt}`
+          }
+          // 스타일 이미지도 레퍼런스로 주입
+          if (styleRef?.mediaId && !matchedRefs.some(r => r.mediaId === styleRef.mediaId)) {
+            matchedRefs.push({ category: styleRef.category || 'style', mediaId: styleRef.mediaId, caption: styleRef.caption || '' })
+          }
+        } else if (selectedStyleRefId.startsWith('preset:')) {
+          const presetId = selectedStyleRefId.replace('preset:', '')
+          const { STYLE_PRESETS } = require('../config/stylePresets')
+          const preset = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+          if (preset?.prompt_en) {
+            styledPrompt = `${scene.prompt}, ${preset.prompt_en}`
+          }
+        }
+      }
+
       // 비동기 제출
-      const submitResult = await submitGenerationDOM(scene.prompt, matchedRefs, { batchCount: imageBatchCount })
+      const submitResult = await submitGenerationDOM(styledPrompt, matchedRefs, { batchCount: imageBatchCount })
       if (submitResult.success && submitResult.generationId) {
         pendingQueue.push({ generationId: submitResult.generationId, scene, submittedAt: Date.now() })
         consecutiveErrors = 0
@@ -376,7 +431,8 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       saveMode = 'folder',
       sceneIndices = null,
       imageBatchCount = 1,
-      imageUpscale = '2k'
+      imageUpscale = '2k',
+      selectedStyleRefId = null
     } = options
 
     if (isRunning) return
