@@ -24,10 +24,14 @@ async function loadProjectWithImages(projectName) {
       if (scene.id && !isAbsolutePath(scene.imagePath)) {
         const pathResult = await fileSystemAPI.getResourcePath(projectName, 'scenes', scene.id)
         if (pathResult.success) {
-          return { ...scene, image: null, imagePath: pathResult.path }
+          return { ...scene, image: null, imagePath: pathResult.path, status: 'done' }
         }
       }
-      return scene
+      // 이미지가 있으면 status를 done으로 보정
+      if (scene.image || scene.imagePath) {
+        return { ...scene, status: scene.status === 'error' ? 'error' : 'done' }
+      }
+      return { ...scene, status: scene.status || 'pending' }
     })
   )
 
