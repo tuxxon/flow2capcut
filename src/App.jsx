@@ -665,9 +665,10 @@ function App() {
 
   // 어느 자동화든 실행 중이면 true
   const anyRunning = isRunning || videoAutomation.isRunning
-  const currentProgress = videoAutomation.isRunning ? videoAutomation.progress : progress
-  const currentStatus = videoAutomation.isRunning ? videoAutomation.status : status
-  const currentStatusMessage = videoAutomation.isRunning ? videoAutomation.statusMessage : statusMessage
+  const isVideoTab = activeTab === 'video-text' || activeTab === 'frame-to-video'
+  const currentProgress = isVideoTab ? videoAutomation.progress : progress
+  const currentStatus = isVideoTab ? videoAutomation.status : status
+  const currentStatusMessage = isVideoTab ? videoAutomation.statusMessage : statusMessage
 
   return (
     <div className="app">
