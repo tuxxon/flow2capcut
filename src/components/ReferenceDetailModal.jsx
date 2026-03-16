@@ -352,7 +352,7 @@ export default function ReferenceDetailModal({ reference, index, onUpdate, onUpl
                   key={hist.filename}
                   className={`history-thumb ${(editData.data && editData.data === hist.data) || (editData.filePath && hist.filePath && editData.filePath === hist.filePath) ? 'selected' : ''}`}
                   onClick={() => handleRestoreHistory(hist)}
-                  title={`${new Date(hist.lastModified).toLocaleString()} - ${t('common.clickToRestore')}`}
+                  title={`${new Date(hist.timestamp).toLocaleString()} - ${t('common.clickToRestore')}`}
                 >
                   <img src={hist.data} alt={`History ${idx + 1}`} />
                 </div>
