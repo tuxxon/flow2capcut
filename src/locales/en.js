@@ -37,6 +37,7 @@ export default {
     list: 'Scenes',
     import: 'Import',
     references: 'References',
+    audio: 'Audio',
   },
 
   // Frame to Video panel
@@ -385,7 +386,54 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     scanFailed: 'Audio package scan failed: {error}',
     scanSuccess: 'Audio package loaded!\nCharacters: {characters}\n{voiceCount} voice files, {sfxCount} SFX categories',
   },
-  
+
+  // Audio Result Modal
+  audioResult: {
+    title: 'Audio Package Scan Result',
+    confirm: 'OK',
+    characters: 'Characters',
+    voiceFiles: 'Voice Files',
+    sfxCategories: 'SFX Categories',
+    footage: 'Footage',
+    srt: 'Subtitle',
+    voiceDetail: 'Voices by Character',
+    sfxDetail: 'SFX Details',
+    footageDetail: 'Footage Files',
+    files: 'files',
+    sfxTimecodes: 'SFX Timecodes',
+    srtPreview: 'Subtitle Preview',
+    more: 'more',
+    sort_character: 'Name',
+    sort_timecode: 'Time',
+    sort_count: 'Count',
+    scanning: 'Scanning audio package...',
+    thTime: 'Time',
+    thCharacter: 'Character',
+    thFile: 'File',
+    thCategory: 'Category',
+    sort_sfx_category: 'Category',
+    sort_sfx_name: 'Name',
+    sort_sfx_timecode: 'Time',
+  },
+
+  audioTab: {
+    title: 'Audio',
+    importFirst: 'Import audio package first',
+    summary: 'Summary',
+    timeline: 'Timeline',
+    flagFile: 'Flag as inappropriate',
+    flagReasonPlaceholder: 'Reason (e.g., doorbell sound, not suitable for historical drama)',
+    flagSave: 'Save',
+    flagCancel: 'Cancel',
+    flagRemove: 'Remove flag',
+    flagged: 'Flagged',
+    refresh: 'Refresh',
+    refreshDesc: 'Reload the review file (.audio_review.json) to update flagged status.',
+    srtMatch: 'Subtitle',
+    typeVoice: 'Voice',
+    typeSfx: 'SFX',
+  },
+
   // History
   history: {
     title: 'History',

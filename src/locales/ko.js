@@ -37,6 +37,7 @@ export default {
     list: '씬목록',
     import: '가져오기',
     references: '레퍼런스',
+    audio: '오디오',
   },
 
   // Frame to Video 패널
@@ -385,7 +386,54 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     scanFailed: '오디오 패키지 스캔 실패: {error}',
     scanSuccess: '오디오 패키지 로드 완료!\n인물: {characters}\n음성 {voiceCount}개, SFX {sfxCount}개',
   },
-  
+
+  // 오디오 결과 모달
+  audioResult: {
+    title: '오디오 패키지 스캔 결과',
+    confirm: '확인',
+    characters: '인물',
+    voiceFiles: '음성 파일',
+    sfxCategories: 'SFX 카테고리',
+    footage: '영상 파일',
+    srt: '자막 파일',
+    voiceDetail: '인물별 음성',
+    sfxDetail: 'SFX 상세',
+    footageDetail: '영상 파일',
+    files: '개',
+    sfxTimecodes: 'SFX 타임코드',
+    srtPreview: '자막 미리보기',
+    more: '개 더',
+    sort_character: '인물순',
+    sort_timecode: '시간순',
+    sort_count: '개수순',
+    scanning: '오디오 패키지 스캔 중...',
+    thTime: '시간',
+    thCharacter: '인물',
+    thFile: '파일',
+    thCategory: '카테고리',
+    sort_sfx_category: '분류순',
+    sort_sfx_name: '이름순',
+    sort_sfx_timecode: '시간순',
+  },
+
+  audioTab: {
+    title: '오디오',
+    importFirst: '오디오 패키지를 먼저 가져오세요',
+    summary: '요약',
+    timeline: '타임라인',
+    flagFile: '부적합 마크',
+    flagReasonPlaceholder: '부적합 사유 (예: 초인종 소리, 조선시대에 안 맞음)',
+    flagSave: '저장',
+    flagCancel: '취소',
+    flagRemove: '마크 해제',
+    flagged: '부적합',
+    refresh: '새로고침',
+    refreshDesc: '리뷰 파일(.audio_review.json)을 다시 읽어 부적합 마크 상태를 업데이트합니다.',
+    srtMatch: '자막',
+    typeVoice: '음성',
+    typeSfx: '효과음',
+  },
+
   // 기록
   history: {
     title: '기록',

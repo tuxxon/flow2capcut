@@ -480,6 +480,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
+    // ── 오디오 리뷰 도구 ──
+    {
+      name: 'list_audio_reviews',
+      description: '오디오 패키지의 부적합 마크(교체 마크) 목록을 반환합니다. .audio_review.json 파일을 읽습니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder_path: { type: 'string', description: '오디오 패키지 폴더 절대 경로' },
+        },
+        required: ['folder_path'],
+      },
+    },
+    {
+      name: 'update_audio_review',
+      description: '오디오 파일의 부적합 마크를 추가/수정/삭제합니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder_path: { type: 'string', description: '오디오 패키지 폴더 절대 경로' },
+          relative_path: { type: 'string', description: '파일 상대 경로 (예: voice_samples/sfx/01_주판/click_01.mp3)' },
+          action: { type: 'string', enum: ['flag', 'unflag'], description: 'flag=마크, unflag=해제' },
+          reason: { type: 'string', description: '부적합 사유 (flag 시 필요)' },
+        },
+        required: ['folder_path', 'relative_path', 'action'],
+      },
+    },
   ],
 }));
 
@@ -899,6 +925,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
 
           await new Promise(r => setTimeout(r, interval));
+        }
+      }
+
+      // ── 오디오 리뷰 핸들러 ──
+
+      case 'list_audio_reviews': {
+        const reviewPath = path.join(args.folder_path, '.audio_review.json');
+        if (!fs.existsSync(reviewPath)) {
+          return {
+            content: [{ type: 'text', text: '부적합 마크된 파일이 없습니다. (.audio_review.json 파일 없음)' }],
+          };
+        }
+        const reviews = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
+        const entries = Object.entries(reviews);
+        if (entries.length === 0) {
+          return {
+            content: [{ type: 'text', text: '부적합 마크된 파일이 없습니다.' }],
+          };
+        }
+        const summary = entries.map(([filePath, info]) =>
+          `⚠️ ${filePath}\n   사유: ${info.reason || '(없음)'}\n   시간: ${info.flaggedAt || '-'}`
+        ).join('\n\n');
+        return {
+          content: [{
+            type: 'text',
+            text: `부적합 마크 ${entries.length}개:\n\n${summary}`,
+          }],
+        };
+      }
+
+      case 'update_audio_review': {
+        const reviewPath = path.join(args.folder_path, '.audio_review.json');
+        let reviews = {};
+        if (fs.existsSync(reviewPath)) {
+          reviews = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
+        }
+        if (args.action === 'flag') {
+          reviews[args.relative_path] = {
+            status: 'flagged',
+            reason: args.reason || '',
+            flaggedAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(reviewPath, JSON.stringify(reviews, null, 2), 'utf-8');
+          return {
+            content: [{ type: 'text', text: `마크 완료: ${args.relative_path} (사유: ${args.reason || '-'})` }],
+          };
+        } else {
+          delete reviews[args.relative_path];
+          fs.writeFileSync(reviewPath, JSON.stringify(reviews, null, 2), 'utf-8');
+          return {
+            content: [{ type: 'text', text: `마크 해제: ${args.relative_path}` }],
+          };
         }
       }
 

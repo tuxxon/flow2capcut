@@ -1116,6 +1116,93 @@ function startMcpHttpServer(port) {
           return
         }
 
+        // POST /api/audio-refresh — 오디오 리뷰 새로고침 (폴더 재스캔 + 자동 언플래그)
+        if (req.method === 'POST' && pathname === '/api/audio-refresh') {
+          if (mainWindow) {
+            mainWindow.webContents.executeJavaScript(
+              `(async () => { await window.__mcpRefreshAudioReviews?.(); return JSON.stringify(window.__mcpGetAudioReviews?.() || {}); })()`
+            ).then(result => {
+              const reviews = JSON.parse(result)
+              res.writeHead(200)
+              res.end(JSON.stringify({ success: true, count: Object.keys(reviews).length, reviews }))
+            }).catch(err => {
+              res.writeHead(500)
+              res.end(JSON.stringify({ error: err.message }))
+            })
+          } else {
+            res.writeHead(503)
+            res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
+        // GET /api/audio-reviews — 현재 오디오 리뷰 상태 조회
+        if (req.method === 'GET' && pathname === '/api/audio-reviews') {
+          if (mainWindow) {
+            mainWindow.webContents.executeJavaScript(
+              `JSON.stringify(window.__mcpGetAudioReviews?.() || {})`
+            ).then(result => {
+              const reviews = JSON.parse(result)
+              res.writeHead(200)
+              res.end(JSON.stringify({ count: Object.keys(reviews).length, reviews }))
+            }).catch(err => {
+              res.writeHead(500)
+              res.end(JSON.stringify({ error: err.message }))
+            })
+          } else {
+            res.writeHead(503)
+            res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
+        // POST /api/audio-import — 오디오 패키지 로드 (폴더 경로 지정)
+        if (req.method === 'POST' && pathname === '/api/audio-import') {
+          if (mainWindow) {
+            const { folderPath } = body ? JSON.parse(body) : {}
+            if (!folderPath) {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'folderPath required' }))
+              return
+            }
+            mainWindow.webContents.executeJavaScript(
+              `(async () => { const r = await window.__mcpImportAudio?.(${JSON.stringify(folderPath)}); return JSON.stringify(r || {}); })()`
+            ).then(result => {
+              const r = JSON.parse(result)
+              res.writeHead(r.success ? 200 : 500)
+              res.end(JSON.stringify(r))
+            }).catch(err => {
+              res.writeHead(500)
+              res.end(JSON.stringify({ error: err.message }))
+            })
+          } else {
+            res.writeHead(503)
+            res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
+        // POST /api/export-capcut — CapCut 프로젝트 내보내기
+        if (req.method === 'POST' && pathname === '/api/export-capcut') {
+          if (mainWindow) {
+            const optionsJson = body ? JSON.stringify(JSON.parse(body)) : '{}'
+            mainWindow.webContents.executeJavaScript(
+              `(async () => { const r = await window.__mcpExportCapcut?.(${optionsJson}); return JSON.stringify(r || {}); })()`
+            ).then(result => {
+              const r = JSON.parse(result)
+              res.writeHead(r.success ? 200 : 500)
+              res.end(JSON.stringify(r))
+            }).catch(err => {
+              res.writeHead(500)
+              res.end(JSON.stringify({ error: err.message }))
+            })
+          } else {
+            res.writeHead(503)
+            res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
         // 404
         res.writeHead(404)
         res.end(JSON.stringify({ error: 'Not found' }))

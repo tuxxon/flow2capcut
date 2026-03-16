@@ -41,6 +41,8 @@ import { ExportModal } from './components/ExportModal'
 import { AuthModal } from './components/AuthModal'
 import { PaywallModal } from './components/PaywallModal'
 import TagValidationModal from './components/TagValidationModal'
+import AudioResultModal from './components/AudioResultModal'
+import AudioPanel from './components/AudioPanel'
 import { SubscriptionBanner } from './components/SubscriptionBanner'
 import { useAuth } from './contexts/AuthContext'
 
@@ -101,7 +103,7 @@ function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // UI State
-  const [activeTab, setActiveTab] = useState('text') // 'text' | 'video-text' | 'frame-to-video' | 'list'
+  const [activeTab, setActiveTab] = useState('text') // 'text' | 'video-text' | 'frame-to-video' | 'list' | 'audio'
   const [framePairs, setFramePairs] = useState([])   // Frame to Video 매핑
   const [ftvPromptSource, setFtvPromptSource] = useState('image') // 'image' | 'video' | 'none'
   const [galleryItems, setGalleryItems] = useState([])
@@ -109,6 +111,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState(null) // 설정 모달 초기 탭
   const [showImport, setShowImport] = useState(false)
+  const [showAudioResult, setShowAudioResult] = useState(false)
   const [showReferences, setShowReferences] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [selectedScene, setSelectedScene] = useState(null) // 상세 모달용 선택된 씬
@@ -184,7 +187,15 @@ function App() {
   })
 
   // Audio Import
-  const { audioPackage, audioTracks, importing: audioImporting, importAudioPackage, clearAudioPackage } = useAudioImport(t)
+  const { audioPackage, audioTracks, importing: audioImporting, importAudioPackage, importByPath, clearAudioPackage, audioReviews, saveReview, saveBulkReviews, refreshReviews } = useAudioImport(t)
+
+  const handleImportAudio = async () => {
+    setShowAudioResult(true)
+    const result = await importAudioPackage()
+    if (!result) {
+      setShowAudioResult(false)
+    }
+  }
 
   // Export
   const { showExportModal, setShowExportModal, exporting, exportPhase, handleExportClick, handleExportConfirm } = useExport({
@@ -295,6 +306,51 @@ function App() {
     window.__mcpGenerateScene = (sceneId) => handleGenerateScene(sceneId)
     window.__mcpSetStyle = (styleId) => { setSelectedStyleRefId(styleId); return styleId }
     window.__mcpGetStyle = () => selectedStyleRefId
+    window.__mcpRefreshAudioReviews = () => refreshReviews()
+    window.__mcpGetAudioReviews = () => audioReviews
+    window.__mcpImportAudio = async (folderPath) => {
+      const pkg = await importByPath(folderPath)
+      if (!pkg) return { success: false, error: 'Failed to import audio' }
+      return { success: true, summary: pkg.summary }
+    }
+    window.__mcpExportCapcut = async (options = {}) => {
+      try {
+        // 0. audioPackage가 없으면 자동 로드
+        if (!audioPackage && options.audioFolderPath) {
+          const pkg = await importByPath(options.audioFolderPath)
+          if (!pkg) console.warn('[MCP Export] Audio import failed, continuing without audio')
+        }
+        // 1. CapCut 경로 자동 감지
+        let capcutProjectNumber = options.capcutProjectNumber
+        if (!capcutProjectNumber) {
+          const pathResult = await window.electronAPI?.detectCapcutPath?.()
+          if (!pathResult?.success) return { success: false, error: 'CapCut path not detected' }
+          const numResult = await window.electronAPI?.getNextProjectNumber?.({ basePath: pathResult.basePath })
+          if (!numResult?.success) return { success: false, error: 'Cannot determine project number' }
+          const info = await window.electronAPI?.getSystemInfo?.()
+          const sep = info?.platform === 'darwin' ? '/' : '\\'
+          capcutProjectNumber = `${pathResult.basePath}${sep}${numResult.folderName}`
+        }
+        // 2. 저장된 export 설정 읽기
+        let saved = {}
+        try { saved = JSON.parse(localStorage.getItem('exportSettings') || '{}') } catch {}
+        const exportOptions = {
+          capcutProjectNumber,
+          scaleMode: options.scaleMode || saved.scaleMode || 'none',
+          kenBurns: options.kenBurns ?? saved.kenBurns ?? true,
+          kenBurnsMode: options.kenBurnsMode || saved.kenBurnsMode || 'random',
+          kenBurnsCycle: options.kenBurnsCycle || saved.kenBurnsCycle || 5,
+          kenBurnsScaleMin: (options.kenBurnsScaleMin || saved.kenBurnsScaleMin || 100) / 100,
+          kenBurnsScaleMax: (options.kenBurnsScaleMax || saved.kenBurnsScaleMax || 130) / 100,
+          subtitleOption: options.subtitleOption || (saved.includeSubtitle !== false ? 'ko' : 'none')
+        }
+        // 3. handleExportConfirm 호출
+        await handleExportConfirm(exportOptions)
+        return { success: true, path: capcutProjectNumber }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
     return () => {
       delete window.__mcpGetReferences
       delete window.__mcpGetScenes
@@ -302,8 +358,12 @@ function App() {
       delete window.__mcpGenerateScene
       delete window.__mcpSetStyle
       delete window.__mcpGetStyle
+      delete window.__mcpRefreshAudioReviews
+      delete window.__mcpGetAudioReviews
+      delete window.__mcpImportAudio
+      delete window.__mcpExportCapcut
     }
-  }, [references, scenes, handleGenerateRef, handleGenerateScene, selectedStyleRefId])
+  }, [references, scenes, handleGenerateRef, handleGenerateScene, selectedStyleRefId, refreshReviews, audioReviews, handleExportConfirm, importByPath, audioPackage])
 
   // MCP HTTP 서버에서 오는 데이터 업데이트 수신
   useEffect(() => {
@@ -748,6 +808,15 @@ function App() {
               📋 <span className="tab-label">{t('tabs.list')}</span> ({scenes.length})
             </button>
             <button
+              className={`tab tab-icon ${activeTab === 'audio' ? 'active' : ''}${!audioPackage ? ' tab-disabled' : ''}`}
+              onClick={() => audioPackage ? setActiveTab('audio') : null}
+              title={t('audioTab.title') || '오디오'}
+              disabled={!audioPackage}
+            >
+              🎵 <span className="tab-label">{t('audioTab.title') || '오디오'}</span>
+              {audioPackage && <span className="tab-count"> ({audioPackage.summary?.totalVoiceFiles || 0})</span>}
+            </button>
+            <button
               className={`tab tab-icon ${showReferences ? 'active' : ''}`}
               onClick={() => setShowReferences(!showReferences)}
               title={t('tabs.references')}
@@ -847,6 +916,16 @@ function App() {
               onGenerate={handleGenerateScene}
               generatingSceneId={generatingSceneId}
               references={references}
+            />
+          )}
+          {activeTab === 'audio' && (
+            <AudioPanel
+              audioPackage={audioPackage}
+              audioReviews={audioReviews}
+              onSaveReview={saveReview}
+              onBulkReview={saveBulkReviews}
+              onRefresh={refreshReviews}
+              srtEntries={audioPackage?.srtEntries}
             />
           )}
         </div>
@@ -1027,7 +1106,7 @@ function App() {
       {showImport && (
         <ImportModal
           onImport={handleImport}
-          onImportAudio={importAudioPackage}
+          onImportAudio={handleImportAudio}
           onClose={() => setShowImport(false)}
         />
       )}
@@ -1066,6 +1145,17 @@ function App() {
           onProceed={handleTagValidationProceed}
           onCancel={handleTagValidationCancel}
           t={t}
+        />
+      )}
+
+      {showAudioResult && (
+        <AudioResultModal
+          audioPackage={audioPackage}
+          loading={audioImporting}
+          onClose={() => {
+            setShowAudioResult(false)
+            if (audioPackage) setActiveTab('audio')
+          }}
         />
       )}
     </div>

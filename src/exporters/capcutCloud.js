@@ -112,60 +112,83 @@ async function prepareCloudRequest(project, options = {}) {
   const scenes = project.scenes || [];
   const format = project.format || 'landscape';
 
-  // 씬 메타데이터 준비 — media_type/media_path (resolveExportMedia 결과) 우선 사용
+  // 씬 메타데이터 준비 — 이미지 트랙(기본) + 영상 트랙(선택) 분리
   const cloudScenes = [];
+  const cloudVideoOverlays = []; // 영상 오버레이 (씬 뒤쪽 배치)
   const mediaFiles = []; // 로컬에서 처리할 미디어 파일 정보
+
+  let cumulativeTime = 0; // 씬 시작 시간 누적 (ms)
 
   for (let index = 0; index < scenes.length; index++) {
     const scene = scenes[index];
     const sceneId = scene.id || `scene_${index + 1}`;
     let imageSize = scene.upscaled_size || scene.image_size;
+    const sceneDuration = scene.image_duration || 3;
 
-    // resolveExportMedia()가 결정한 media_type/media_path 사용
-    const type = scene.media_type || 'image';
-    const duration = scene.image_duration || 3;
-    const path = scene.media_path || scene.image_path;
+    // 이미지 (항상 존재)
+    const imagePath = scene.image_path || scene.media_path;
     const fallback = scene.image_fallback;
 
-    if (!path && !fallback) continue; // 미디어 없음 → 스킵
+    if (!imagePath && !fallback) { cumulativeTime += sceneDuration * 1000; continue; }
 
-    const filename = getFilename(path, sceneId, type);
+    const imageFilename = getFilename(imagePath, sceneId, 'image');
 
-    let width, height;
-    if (type === 'video') {
-      width = imageSize?.width || 1920;
-      height = imageSize?.height || 1080;
-    } else {
-      // image_size가 없으면 base64에서 추출 시도
-      if (!imageSize && fallback) {
-        console.log(`[CapCut Cloud] Extracting image size for ${sceneId} from base64...`);
-        imageSize = await getImageSizeFromBase64(fallback);
-        if (imageSize) {
-          console.log(`[CapCut Cloud] Extracted size: ${imageSize.width}x${imageSize.height}`);
-        }
+    // image_size가 없으면 base64에서 추출 시도
+    if (!imageSize && fallback) {
+      console.log(`[CapCut Cloud] Extracting image size for ${sceneId} from base64...`);
+      imageSize = await getImageSizeFromBase64(fallback);
+      if (imageSize) {
+        console.log(`[CapCut Cloud] Extracted size: ${imageSize.width}x${imageSize.height}`);
       }
-      width = imageSize?.width || 1024;
-      height = imageSize?.height || 1024;
     }
+    const imgWidth = imageSize?.width || 1024;
+    const imgHeight = imageSize?.height || 1024;
 
     cloudScenes.push({
       id: sceneId,
-      type,
-      filename,
-      width,
-      height,
-      duration,
+      type: 'image',
+      filename: imageFilename,
+      width: imgWidth,
+      height: imgHeight,
+      duration: sceneDuration,
       subtitleKo: scene.subtitle_ko || null,
       subtitleEn: scene.subtitle_en || null
     });
 
     mediaFiles.push({
       sceneId,
-      type,
-      filename,
-      path,
+      type: 'image',
+      filename: imageFilename,
+      path: imagePath,
       fallback
     });
+
+    // 영상 오버레이 (있으면, 씬 뒤쪽에 배치)
+    const videoPath = scene.video_path;
+    const videoDuration = scene.video_duration || 0;
+    if (videoPath && videoDuration > 0 && videoDuration < sceneDuration) {
+      const videoFilename = getFilename(videoPath, sceneId, 'video');
+      const videoStartMs = cumulativeTime + (sceneDuration - videoDuration) * 1000;
+
+      cloudVideoOverlays.push({
+        sceneId,
+        filename: videoFilename,
+        width: imgWidth,  // 영상도 동일 캔버스
+        height: imgHeight,
+        durationMs: videoDuration * 1000,
+        startMs: videoStartMs
+      });
+
+      mediaFiles.push({
+        sceneId,
+        type: 'video',
+        filename: videoFilename,
+        path: videoPath,
+        fallback: null
+      });
+    }
+
+    cumulativeTime += sceneDuration * 1000;
   }
 
   // SFX 메타데이터 준비
@@ -245,50 +268,23 @@ async function prepareCloudRequest(project, options = {}) {
       }
     }
 
-    // SFX 파일 — 타임코드와 카테고리별 매칭
-    const sfxFileMap = {};
+    // SFX 파일 — 타임코드가 있는 파일만 미디어 등록 + 트랙 배치
     for (const sfxCat of (audioPackage.sfx || [])) {
-      // 숫자 접두어 제거: "01_주판" → "주판"
-      const cleanCat = sfxCat.category.replace(/^\d+_/, '');
-      sfxFileMap[cleanCat] = sfxCat.files;
-
       for (const file of sfxCat.files) {
+        if (file.timecodeMs == null) continue; // 타임코드 없는 템플릿 제외
         const sfxFilename = `sfx_${sfxCat.category}_${file.filename}`;
         audioFiles.push({
           type: 'sfx',
           filename: sfxFilename,
           path: file.path
         });
-      }
-    }
 
-    // SFX 타임코드 → 파일 매칭하여 cloudAudioTracks에 추가
-    for (const sfxTc of (audioPackage.sfxTimecodes || [])) {
-      // 카테고리명으로 매칭 (sfxTc.category에 cleanCat 포함 여부)
-      let matchedFile = null;
-      for (const [cleanCat, files] of Object.entries(sfxFileMap)) {
-        if (sfxTc.category.includes(cleanCat) && files.length > 0) {
-          matchedFile = files[0]; // 첫 번째 파일 사용
-          // 해당 카테고리의 원래 폴더명 찾기
-          const origCat = (audioPackage.sfx || []).find(s =>
-            s.category.replace(/^\d+_/, '') === cleanCat
-          )?.category || cleanCat;
-          matchedFile = {
-            ...matchedFile,
-            sfxFilename: `sfx_${origCat}_${matchedFile.filename}`
-          };
-          break;
-        }
-      }
-
-      if (matchedFile) {
         cloudAudioTracks.push({
           type: 'sfx_timed',
-          filename: matchedFile.sfxFilename,
-          timecodeMs: sfxTc.timecodeMs,
-          durationMs: 3000,
-          description: sfxTc.description,
-          category: sfxTc.category
+          filename: sfxFilename,
+          timecodeMs: file.timecodeMs,
+          durationMs: file.durationMs || 3000,
+          category: sfxCat.category
         });
       }
     }
@@ -310,7 +306,9 @@ async function prepareCloudRequest(project, options = {}) {
         scaleMax: kenBurnsScaleMax
       },
       subtitleOption,
+      srtEntries: audioPackage?.srtEntries || null,
       scenes: cloudScenes,
+      videoOverlays: cloudVideoOverlays.length > 0 ? cloudVideoOverlays : undefined,
       sfxItems: cloudSfxItems,
       audioTracks: cloudAudioTracks.length > 0 ? cloudAudioTracks : undefined,
       mediaPathBase
@@ -495,15 +493,19 @@ export async function exportCapcutPackageCloud(project, options = {}) {
   console.log(`[CapCut Cloud] Collected ${collectedMediaFiles.length} media files (incl. ${audioFiles.length} audio)`);
 
   // 4. SRT 자막 파일 수집
-  const { subtitleOption = 'both' } = options;
+  const { subtitleOption = 'both', audioPackage } = options;
   const { generateSRT } = await import('./capcut.js');
   const srtFiles = [];
 
-  if (subtitleOption === 'ko' || subtitleOption === 'both') {
+  // 원본 SRT가 있으면 그대로 사용 (나레이션 sync 유지)
+  if (audioPackage?.srtContent && (subtitleOption === 'ko' || subtitleOption === 'both')) {
+    srtFiles.push({ filename: `${name}_subtitle_ko.srt`, content: audioPackage.srtContent });
+    console.log('[CapCut Cloud] Using original SRT from audio package');
+  } else if (subtitleOption === 'ko' || subtitleOption === 'both') {
     const srtKo = generateSRT(project, 'ko');
     if (srtKo) {
       srtFiles.push({ filename: `${name}_subtitle_ko.srt`, content: srtKo });
-      console.log('[CapCut Cloud] Collected SRT file: ko');
+      console.log('[CapCut Cloud] Collected SRT file: ko (generated)');
     }
   }
   if (subtitleOption === 'en' || subtitleOption === 'both') {

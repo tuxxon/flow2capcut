@@ -20,6 +20,7 @@ import path from 'path'
 import { exec } from 'child_process'
 import os from 'os'
 import { dialog } from 'electron'
+import { randomUUID } from 'crypto'
 
 // ============================================================
 // Helper Functions
@@ -261,12 +262,47 @@ export function registerCapcutIPC(ipcMain) {
         }
       }
 
-      // Write SRT subtitle files (text content)
+      // Write SRT subtitle files (text content) and register in draft_meta_info
       if (Array.isArray(srtFiles)) {
+        // Parse draftMetaInfo to add SRT references
+        let metaObj = typeof draftMetaInfo === 'string'
+          ? JSON.parse(draftMetaInfo)
+          : draftMetaInfo
+        const type2Group = metaObj.draft_materials?.find(g => g.type === 2)
+
         for (const file of srtFiles) {
           const filePath = path.join(mediaDir, file.filename)
           await fs.writeFile(filePath, file.content, 'utf-8')
           fileCount++
+
+          // Register SRT in draft_meta_info type=2
+          if (type2Group) {
+            type2Group.value.push({
+              ai_group_type: '',
+              create_time: 0,
+              duration: 0,
+              enter_from: 0,
+              extra_info: file.filename,
+              file_Path: `./media/${file.filename}`,
+              height: 0,
+              id: randomUUID().toUpperCase(),
+              import_time: Math.floor(Date.now() / 1000),
+              import_time_ms: -1,
+              item_source: 1,
+              md5: '',
+              metetype: 'none',
+              roughcut_time_range: { duration: -1, start: -1 },
+              sub_time_range: { duration: -1, start: -1 },
+              type: 2,
+              width: 0
+            })
+          }
+        }
+
+        // Re-write draft_meta_info.json with SRT references
+        if (type2Group && srtFiles.length > 0) {
+          const updatedMeta = JSON.stringify(metaObj, null, 2)
+          await fs.writeFile(path.join(targetPath, 'draft_meta_info.json'), updatedMeta, 'utf-8')
         }
       }
 

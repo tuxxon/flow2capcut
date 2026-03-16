@@ -901,7 +901,25 @@ export function registerFilesystemIPC(ipcMain) {
               const sfxFiles = await fs.readdir(sfxCatPath)
               const audioFiles = sfxFiles
                 .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
-                .map(f => ({ path: path.join(sfxCatPath, f), filename: f }))
+                .map(f => {
+                  const name = f.replace(/\.\w+$/, '')
+                  const parts = name.split('_')
+                  const timecodeStr = parts[parts.length - 1]
+                  let timecodeMs = null
+
+                  if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                    const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                    const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                    timecodeMs = (mm * 60 + ss) * 1000
+                  } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                    const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                    const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                    const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                    timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
+                  }
+
+                  return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
+                })
 
               if (audioFiles.length > 0) {
                 sfxCategories.push({
@@ -995,6 +1013,154 @@ export function registerFilesystemIPC(ipcMain) {
   })
 
   // ----------------------------------------------------------
+  // 23-b. fs:rescan-audio-package — 기존 폴더 경로로 재스캔 (다이얼로그 없음)
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:rescan-audio-package', async (_event, { folderPath }) => {
+    try {
+      if (!folderPath || !(await pathExists(folderPath))) {
+        return { success: false, error: 'Invalid folder path' }
+      }
+
+      // 1. footage/ 스캔
+      const footageDir = path.join(folderPath, 'footage')
+      let footage = { video: null, srt: null }
+      if (await pathExists(footageDir)) {
+        const files = await fs.readdir(footageDir)
+        for (const f of files) {
+          const ext = path.extname(f).toLowerCase()
+          if (['.mp4', '.wav', '.mp3', '.m4a'].includes(ext) && !footage.video) {
+            footage.video = { path: path.join(footageDir, f), filename: f }
+          }
+          if (ext === '.srt' && !footage.srt) {
+            footage.srt = { path: path.join(footageDir, f), filename: f }
+          }
+        }
+      }
+
+      let srtContent = null
+      if (footage.srt) {
+        srtContent = await fs.readFile(footage.srt.path, 'utf-8')
+      }
+
+      // 2. voice_samples/ 스캔
+      const voiceDir = path.join(folderPath, 'voice_samples')
+      const voices = []
+      const sfxCategories = []
+
+      if (await pathExists(voiceDir)) {
+        const entries = await fs.readdir(voiceDir, { withFileTypes: true })
+
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          const subDirPath = path.join(voiceDir, entry.name)
+
+          if (entry.name === 'sfx') {
+            const sfxEntries = await fs.readdir(subDirPath, { withFileTypes: true })
+            for (const sfxEntry of sfxEntries) {
+              if (!sfxEntry.isDirectory()) continue
+              const sfxCatPath = path.join(subDirPath, sfxEntry.name)
+              const sfxFiles = await fs.readdir(sfxCatPath)
+              const audioFiles = sfxFiles
+                .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
+                .map(f => {
+                  const name = f.replace(/\.\w+$/, '')
+                  const parts = name.split('_')
+                  const timecodeStr = parts[parts.length - 1]
+                  let timecodeMs = null
+
+                  if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                    const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                    const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                    timecodeMs = (mm * 60 + ss) * 1000
+                  } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                    const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                    const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                    const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                    timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
+                  }
+
+                  return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
+                })
+
+              if (audioFiles.length > 0) {
+                sfxCategories.push({ category: sfxEntry.name, files: audioFiles })
+              }
+            }
+          } else {
+            const voiceFiles = await fs.readdir(subDirPath)
+            const candidates = voiceFiles
+              .filter(f => /\.(wav|mp3|ogg|m4a)$/i.test(f))
+              .map(f => {
+                const name = f.replace(/\.\w+$/, '')
+                const parts = name.split('_')
+                const timecodeStr = parts[parts.length - 1]
+                const seqStr = parts.length >= 3 ? parts[parts.length - 2] : null
+                let timecodeMs = null
+
+                if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                  const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                  const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                  timecodeMs = (mm * 60 + ss) * 1000
+                } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                  const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                  const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                  const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                  timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
+                }
+
+                return { path: path.join(subDirPath, f), filename: f, seq: seqStr ? parseInt(seqStr, 10) : null, timecodeMs }
+              })
+              .filter(f => f.timecodeMs !== null)
+              .sort((a, b) => a.timecodeMs - b.timecodeMs)
+
+            const audioFiles = await Promise.all(
+              candidates.map(async (f) => {
+                const durationMs = await getAudioDurationMs(f.path)
+                return { ...f, durationMs }
+              })
+            )
+
+            if (audioFiles.length > 0) {
+              voices.push({ character: entry.name, files: audioFiles })
+            }
+          }
+        }
+      }
+
+      // 3. 음향효과_추출.md 읽기
+      let sfxMdContent = null
+      const sfxMdCandidates = ['음향효과_추출.md', 'sfx_timecodes.md']
+      for (const candidate of sfxMdCandidates) {
+        const mdPath = path.join(folderPath, candidate)
+        if (await pathExists(mdPath)) {
+          sfxMdContent = await fs.readFile(mdPath, 'utf-8')
+          break
+        }
+      }
+
+      return {
+        success: true,
+        folderPath,
+        footage,
+        srtContent,
+        voices,
+        sfx: sfxCategories,
+        sfxMdContent,
+        summary: {
+          characters: voices.map(v => v.character),
+          totalVoiceFiles: voices.reduce((sum, v) => sum + v.files.length, 0),
+          totalSfxCategories: sfxCategories.length,
+          hasSrt: !!srtContent,
+          hasFootage: !!footage.video,
+          hasSfxTimecodes: !!sfxMdContent
+        }
+      }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ----------------------------------------------------------
   // 24. fs:read-file-absolute — 절대 경로로 파일 읽기 (base64)
   //     오디오 파일 등 workFolder 밖의 파일을 읽을 때 사용
   // ----------------------------------------------------------
@@ -1007,6 +1173,19 @@ export function registerFilesystemIPC(ipcMain) {
       const dataUrl = await fileToDataUrl(filePath)
       return { success: true, data: dataUrl }
     } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ----------------------------------------------------------
+  // 25. fs:write-file-absolute — 절대 경로로 텍스트 파일 쓰기
+  // ----------------------------------------------------------
+  ipcMain.handle('fs:write-file-absolute', async (_event, { filePath, content }) => {
+    try {
+      await fs.writeFile(filePath, content, 'utf-8')
+      return { success: true }
+    } catch (error) {
+      console.error('[FS] write-file-absolute error:', error)
       return { success: false, error: error.message }
     }
   })

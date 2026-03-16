@@ -62,7 +62,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkStyleThumbnails: () => ipcRenderer.invoke('fs:check-style-thumbnails'),
   deleteStyleThumbnail: (params) => ipcRenderer.invoke('fs:delete-style-thumbnail', params),
   scanAudioPackage: () => ipcRenderer.invoke('fs:scan-audio-package'),
+  rescanAudioPackage: (params) => ipcRenderer.invoke('fs:rescan-audio-package', params),
   readFileAbsolute: (params) => ipcRenderer.invoke('fs:read-file-absolute', params),
+  writeFileAbsolute: (params) => ipcRenderer.invoke('fs:write-file-absolute', params),
 
   // CapCut
   detectCapcutPath: () => ipcRenderer.invoke('capcut:detect-path'),

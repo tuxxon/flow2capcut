@@ -96,21 +96,29 @@ export function useExport({
       const { exportCapcut } = await import('../exporters/capcut.js')
 
       // capcut.js가 기대하는 project 구조로 변환
+      // 이미지 트랙(기본) + 영상 트랙(선택) 분리 구조
       const project = {
         name: settings.projectName || generateProjectName(),
         format: settings.aspectRatio === '9:16' ? 'short' : 'landscape',
         scenes: validScenes.map(s => {
-          const media = resolveExportMedia(s)
+          const sceneDuration = s.duration || settings.defaultDuration || 3
+          const video = resolveExportMedia(s)
+          const hasVideo = video.type === 'video' && (video.path || video.data)
+          const videoDuration = hasVideo ? (s.videoT2VDuration || s.videoI2VDuration || 0) : 0
+
           return {
             id: s.id,
-            // ── 선택된 미디어 (비디오 or 이미지) ──
-            media_type: media.type,
-            media_path: media.path || media.data,
-            // 기존 이미지 필드 유지 (폴백용)
+            // ── 이미지 (항상 존재) ──
+            media_type: 'image',
+            media_path: s.imagePath || s.image,
             image_path: s.imagePath || s.image,
             image_fallback: s.image,
-            image_duration: s.duration || settings.defaultDuration || 3,
+            image_duration: sceneDuration,
             image_size: s.image_size || null,
+            // ── 영상 (선택적, 씬 뒤쪽 배치) ──
+            video_path: hasVideo ? (video.path || video.data) : null,
+            video_duration: videoDuration,
+            // ── 자막 ──
             subtitle_ko: s.subtitle || '',
             subtitle_en: s.subtitle_en || '',
             subtitle: s.subtitle || '',

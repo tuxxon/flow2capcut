@@ -122,42 +122,21 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
       updates.imageDuration = scene.duration
     }
 
-    // 현재 활성 미디어가 이 비디오면 duration도 같이 업데이트
-    if (activeMedia === type) {
-      updates.duration = videoDuration
-      updates.endTime = scene.startTime + videoDuration
-    }
-
+    // 비디오 duration은 캐시만 하고, 씬 duration은 CSV 기준 유지
     onUpdate(scene.id, updates)
   }
 
-  // Export 미디어 전환 + duration 자동 조정
+  // Export 미디어 전환 (duration은 CSV 기준 유지, 변경 안 함)
   const switchExportMedia = async (type) => {
     const updates = { exportMedia: type }
 
-    if (type === 'image') {
-      // 이미지 선택 → imageDuration으로 복원 (없으면 현재 유지)
-      const imgDur = scene.imageDuration || scene.duration
-      updates.duration = imgDur
-      updates.endTime = scene.startTime + imgDur
-    } else {
-      // 비디오 선택 (t2v / i2v)
+    if (type !== 'image') {
+      // 비디오 duration 캐시만 (씬 duration은 건드리지 않음)
       const videoData = type === 't2v' ? scene.videoT2V : scene.videoI2V
       const durationField = type === 't2v' ? 'videoT2VDuration' : 'videoI2VDuration'
-
-      // 캐시된 duration 사용, 없으면 즉시 감지
-      let videoDur = scene[durationField]
-      if (!videoDur && videoData) {
-        videoDur = await detectVideoDuration(videoData)
+      if (!scene[durationField] && videoData) {
+        const videoDur = await detectVideoDuration(videoData)
         if (videoDur) updates[durationField] = videoDur
-      }
-
-      if (videoDur) {
-        if (!scene.imageDuration) {
-          updates.imageDuration = scene.duration
-        }
-        updates.duration = videoDur
-        updates.endTime = scene.startTime + videoDur
       }
     }
 
