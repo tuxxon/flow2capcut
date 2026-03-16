@@ -43,7 +43,7 @@ export function useVideoScenes() {
       videoPath: null,
       mediaId: null,
       generationId: null,
-      selected: true,
+      selected: false,
     }))
 
     setVideoScenes(newVideoScenes)

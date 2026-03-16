@@ -339,6 +339,8 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
   import: {
     title: '파일 불러오기',
     close: '닫기',
+    modeImage: '이미지',
+    modeVideo: '비디오',
     selectFormat: '파일 형식을 선택하세요',
     textTab: '텍스트',
     csvTab: 'CSV',

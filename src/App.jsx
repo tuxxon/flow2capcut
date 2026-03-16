@@ -17,7 +17,7 @@ import { useSceneGeneration } from './hooks/useSceneGeneration'
 import { useExport } from './hooks/useExport'
 import { useAudioImport } from './hooks/useAudioImport'
 import { generateProjectName } from './utils/formatters'
-import { detectFileType, detectCSVType } from './utils/parsers'
+import { detectFileType, detectCSVType, parseCSVToScenes, parseSRTToScenes } from './utils/parsers'
 import { checkFolderPermission } from './utils/guards'
 import { collectTagErrors } from './utils/tagMatch'
 import { toast } from './components/Toast'
@@ -395,15 +395,30 @@ function App() {
   }
 
   // Handle import
-  const handleImport = async (type, content) => {
+  const handleImport = async (type, content, mode = 'image') => {
     const detectedType = detectFileType(content)
     const projectName = settings.projectName
 
+    // 비디오 모드: videoScenesHook으로 라우팅
+    const isVideo = mode === 'video'
+
     // 타입별 실행 액션
     const actions = {
-      text: () => parseFromText(content, settings.defaultDuration),
-      csv: () => parseFromCSV(content, settings.defaultDuration),
-      srt: () => parseFromSRT(content),
+      text: () => isVideo
+        ? videoScenesHook.parseFromText(content, settings.defaultDuration)
+        : parseFromText(content, settings.defaultDuration),
+      csv: () => isVideo
+        ? videoScenesHook.parseFromText(
+            parseCSVToScenes(content, settings.defaultDuration).map(s => s.prompt).join('\n'),
+            settings.defaultDuration
+          )
+        : parseFromCSV(content, settings.defaultDuration),
+      srt: () => isVideo
+        ? videoScenesHook.parseFromText(
+            parseSRTToScenes(content).map(s => s.prompt).join('\n'),
+            settings.defaultDuration
+          )
+        : parseFromSRT(content),
       reference: async () => {
         await parseReferencesFromCSV(content, projectName)
         setShowReferences(true)
@@ -425,18 +440,34 @@ function App() {
         await actions[detectedType]?.()
       }
       setShowImport(false)
+      if (isVideo) setActiveTab('video-text')
       return
     }
 
     // 정상 처리
     await actions[type]?.()
     setShowImport(false)
+    if (isVideo) setActiveTab('video-text')
   }
 
   // Handle start — 활성 탭에 따라 이미지/비디오 생성 모드 분기
   const handleStart = async () => {
     // 이미 실행 중이면 무시 (중지는 별도 버튼)
     if (isRunning || videoAutomation.isRunning) return
+
+    // 선택 검증 (폴더 확인보다 먼저)
+    if (activeTab === 'video-text') {
+      if (videoScenes.filter(s => s.selected !== false).length === 0) {
+        toast.warning(t('videoSelection.noneSelected'))
+        return
+      }
+    }
+    if (activeTab === 'frame-to-video') {
+      if (framePairs.filter(p => p.selected !== false).length === 0) {
+        toast.warning(t('videoSelection.noneSelected'))
+        return
+      }
+    }
 
     // 폴더 설정 확인
     const folderCheck = await checkFolderPermission(settings, openSettings, t)
@@ -479,12 +510,8 @@ function App() {
       }
 
       case 'video-text': {
-        // Text to Video — 선택된 videoScenes만 실행
+        // Text to Video — 선택된 videoScenes만 실행 (선택 검증은 상단에서 처리)
         const selectedVideoScenes = videoScenes.filter(s => s.selected !== false)
-        if (selectedVideoScenes.length === 0) {
-          toast.warning(t('videoSelection.noneSelected'))
-          return
-        }
         videoAutomation.start({
           mode: 't2v',
           scenes: selectedVideoScenes,
@@ -518,11 +545,8 @@ function App() {
 
       case 'frame-to-video': {
         // Frame to Video — 선택된 framePairs만 실행
+        // Frame to Video — 선택된 framePairs만 실행 (선택 검증은 상단에서 처리)
         const selectedFramePairs = framePairs.filter(p => p.selected !== false)
-        if (selectedFramePairs.length === 0) {
-          toast.warning(t('videoSelection.noneSelected'))
-          return
-        }
         const GALLERY_PFX = 'gallery::'
         const resolvedPairs = selectedFramePairs.map(p => {
           // gallery:: prefix면 mediaId 직접 추출, 아니면 씬에서 resolve

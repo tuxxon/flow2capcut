@@ -15,6 +15,7 @@ const getGuideBaseUrl = (lang) => {
 export default function ImportModal({ onImport, onImportAudio, onClose }) {
   const { t, lang } = useI18n()
   const [selectedType, setSelectedType] = useState(null)
+  const [importMode, setImportMode] = useState('image') // 'image' | 'video'
   const fileInputRef = useRef(null)
 
   const guideBaseUrl = getGuideBaseUrl(lang)
@@ -93,7 +94,7 @@ export default function ImportModal({ onImport, onImportAudio, onClose }) {
     if (!file || !selectedType) return
 
     const reader = new FileReader()
-    reader.onloadend = () => onImport(selectedType, reader.result)
+    reader.onloadend = () => onImport(selectedType, reader.result, importMode)
     reader.readAsText(file)
 
     e.target.value = ''
@@ -119,7 +120,25 @@ export default function ImportModal({ onImport, onImportAudio, onClose }) {
             <div className="import-option" onClick={() => handleOptionClick(option)}>
               <div className="option-icon">{option.icon}</div>
               <div className="option-info">
-                <div className="option-title">{option.title}</div>
+                <div className="option-title-row">
+                  <span className="option-title">{option.title}</span>
+                  {option.id === 'text' && (
+                    <div className="import-mode-segment" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className={`segment-btn${importMode === 'image' ? ' active' : ''}`}
+                        onClick={() => setImportMode('image')}
+                      >
+                        🖼️ {t('import.modeImage')}
+                      </button>
+                      <button
+                        className={`segment-btn${importMode === 'video' ? ' active' : ''}`}
+                        onClick={() => setImportMode('video')}
+                      >
+                        🎬 {t('import.modeVideo')}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="option-desc">{option.description}</div>
                 <div className="option-hint">{option.hint}</div>
               </div>

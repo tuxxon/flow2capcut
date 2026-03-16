@@ -339,6 +339,8 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
   import: {
     title: 'Import File',
     close: 'Close',
+    modeImage: 'Image',
+    modeVideo: 'Video',
     selectFormat: 'Select file format',
     textTab: 'Text',
     csvTab: 'CSV',

@@ -451,6 +451,38 @@
 }
 
 /* Import Modal */
+/* Import 모드 세그먼트 컨트롤 (카드 내부) */
+.import-mode-segment {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px;
+  margin-left: 12px;
+}
+
+.segment-btn {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.segment-btn:hover:not(.active) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.segment-btn.active {
+  background: var(--primary-color);
+  color: #fff;
+}
+
 .import-desc {
   margin-bottom: 16px;
   color: var(--text-secondary);
@@ -487,9 +519,15 @@
   flex: 1;
 }
 
+.option-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
 .option-title {
   font-weight: 600;
-  margin-bottom: 2px;
 }
 
 .option-desc {

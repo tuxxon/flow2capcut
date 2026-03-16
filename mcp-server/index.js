@@ -127,6 +127,7 @@ function saveCSV(csvPath, headers, scenes) {
 
 let csvPath = '';
 let imageDirPath = '';
+let sceneMode = 'image'; // 'image' | 'video'
 let headers = [];
 let scenes = [];
 let projectJsonPath = '';
@@ -177,12 +178,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'load_csv',
-      description: 'CSV 파일과 이미지 디렉토리를 로드합니다.',
+      description: 'CSV 파일과 미디어 디렉토리를 로드합니다.',
       inputSchema: {
         type: 'object',
         properties: {
           csv_path: { type: 'string', description: 'CSV 파일 절대 경로' },
-          image_dir: { type: 'string', description: '이미지 디렉토리 절대 경로 (scene_{N}.jpg)' },
+          image_dir: { type: 'string', description: '이미지/비디오 디렉토리 절대 경로' },
+          mode: { type: 'string', enum: ['image', 'video'], description: '모드 (기본: image)', default: 'image' },
         },
         required: ['csv_path'],
       },
@@ -512,20 +514,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'load_csv': {
         csvPath = args.csv_path;
         imageDirPath = args.image_dir || '';
+        sceneMode = args.mode || 'image';
         const data = loadCSV(csvPath);
         headers = data.headers;
         scenes = data.scenes;
-        // project.json 자동 로드 (이미지 디렉토리 기준으로 2단계 상위)
+        // project.json 자동 로드 (미디어 디렉토리 기준으로 2단계 상위)
         let projectLoaded = false;
         if (imageDirPath) {
           const projectDir = path.resolve(imageDirPath, '..', '..');
           projectLoaded = loadProjectJson(projectDir);
         }
+        const modeLabel = sceneMode === 'video' ? '비디오' : '이미지';
         return {
           content: [{
             type: 'text',
-            text: `CSV 로드 완료: ${scenes.length}개 씬, 필드: ${headers.join(', ')}` +
-              (imageDirPath ? `\n이미지 경로: ${imageDirPath}` : '') +
+            text: `CSV 로드 완료 [${modeLabel} 모드]: ${scenes.length}개 씬, 필드: ${headers.join(', ')}` +
+              (imageDirPath ? `\n미디어 경로: ${imageDirPath}` : '') +
               (projectLoaded ? `\nproject.json 로드 완료 (레퍼런스 ${projectData.references?.length || 0}개)` : ''),
           }],
         };
