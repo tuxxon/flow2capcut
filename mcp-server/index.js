@@ -14,6 +14,8 @@ import {
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs';
 import path from 'path';
@@ -170,7 +172,7 @@ function ensureProjectLoaded() {
 
 const server = new Server(
   { name: 'flow2capcut', version: '1.0.0' },
-  { capabilities: { tools: {}, resources: {} } }
+  { capabilities: { tools: {}, resources: {}, prompts: {} } }
 );
 
 // ── Docs / Skills 경로 ───────────────────────────────────────
@@ -1298,6 +1300,117 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true,
     };
   }
+});
+
+// ── Prompts ──────────────────────────────────────────────────
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: [
+    {
+      name: 'setup',
+      description: 'Flow2CapCut 스킬 설치 상태를 확인하고 미설치 스킬을 안내합니다. MCP 연동 후 처음 사용할 때 실행하세요.',
+    },
+  ],
+}));
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name } = request.params;
+
+  if (name === 'setup') {
+    // 레포 스킬 스캔
+    const repoSkills = [];
+    if (fs.existsSync(SKILLS_REPO_DIR)) {
+      for (const dir of fs.readdirSync(SKILLS_REPO_DIR)) {
+        const skillMd = path.join(SKILLS_REPO_DIR, dir, 'SKILL.md');
+        if (fs.existsSync(skillMd)) {
+          const metaPath = path.join(SKILLS_REPO_DIR, dir, 'metadata.json');
+          let meta = { name: dir };
+          if (fs.existsSync(metaPath)) {
+            meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          }
+          repoSkills.push(meta);
+        }
+      }
+    }
+
+    // 설치 상태 확인
+    const skillStatus = repoSkills.map(meta => {
+      const installDir = path.join(SKILLS_INSTALL_DIR, meta.name);
+      const installed = fs.existsSync(path.join(installDir, 'SKILL.md'));
+      let needsUpdate = false;
+
+      if (installed) {
+        const installedMetaPath = path.join(installDir, 'metadata.json');
+        if (fs.existsSync(installedMetaPath)) {
+          const installedMeta = JSON.parse(fs.readFileSync(installedMetaPath, 'utf-8'));
+          needsUpdate = installedMeta.version !== meta.version;
+        } else {
+          needsUpdate = true; // metadata 없으면 업데이트 필요
+        }
+      }
+
+      return { ...meta, installed, needsUpdate };
+    });
+
+    const notInstalled = skillStatus.filter(s => !s.installed);
+    const outdated = skillStatus.filter(s => s.installed && s.needsUpdate);
+    const upToDate = skillStatus.filter(s => s.installed && !s.needsUpdate);
+
+    let message = '# Flow2CapCut 스킬 설정\n\n';
+
+    if (notInstalled.length === 0 && outdated.length === 0) {
+      message += '✅ 모든 스킬이 최신 상태입니다!\n\n';
+      message += upToDate.map(s => `- **${s.name}** v${s.version} — ${s.description}`).join('\n');
+    } else {
+      if (notInstalled.length > 0) {
+        message += '## 🆕 설치 가능한 스킬\n\n';
+        message += notInstalled.map(s => {
+          const vars = s.variables
+            ? Object.entries(s.variables)
+                .filter(([, v]) => v.required)
+                .map(([k, v]) => `${k}: "${v.example}"`)
+                .join(', ')
+            : '';
+          return `- **${s.name}** v${s.version} — ${s.description}\n` +
+            `  \`install_skill({ name: "${s.name}", variables: { ${vars} } })\``;
+        }).join('\n\n');
+        message += '\n\n';
+      }
+
+      if (outdated.length > 0) {
+        message += '## 🔄 업데이트 가능\n\n';
+        message += outdated.map(s => {
+          const vars = s.variables
+            ? Object.entries(s.variables)
+                .filter(([, v]) => v.required)
+                .map(([k, v]) => `${k}: "${v.example}"`)
+                .join(', ')
+            : '';
+          return `- **${s.name}** → v${s.version}\n` +
+            `  \`install_skill({ name: "${s.name}", variables: { ${vars} } })\``;
+        }).join('\n\n');
+        message += '\n\n';
+      }
+
+      if (upToDate.length > 0) {
+        message += '## ✅ 최신\n\n';
+        message += upToDate.map(s => `- **${s.name}** v${s.version}`).join('\n');
+      }
+
+      message += '\n\n---\n위 명령어를 실행하여 스킬을 설치/업데이트하시겠습니까?';
+    }
+
+    return {
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: message },
+        },
+      ],
+    };
+  }
+
+  throw new Error(`알 수 없는 프롬프트: ${name}`);
 });
 
 // ── Resources ─────────────────────────────────────────────────
