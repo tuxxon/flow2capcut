@@ -342,7 +342,8 @@ function App() {
           kenBurnsCycle: options.kenBurnsCycle || saved.kenBurnsCycle || 5,
           kenBurnsScaleMin: (options.kenBurnsScaleMin || saved.kenBurnsScaleMin || 100) / 100,
           kenBurnsScaleMax: (options.kenBurnsScaleMax || saved.kenBurnsScaleMax || 130) / 100,
-          subtitleOption: options.subtitleOption || (saved.includeSubtitle !== false ? 'ko' : 'none')
+          subtitleOption: options.subtitleOption || (saved.includeSubtitle !== false ? 'ko' : 'none'),
+          subtitleFontSize: options.subtitleFontSize || saved.subtitleFontSize || 8
         }
         // 3. handleExportConfirm 호출
         await handleExportConfirm(exportOptions)
@@ -1044,7 +1045,7 @@ function App() {
           />
         )}
         {activeTab === 'frame-to-video' && (
-          <ResultsTable items={framePairs} mediaType="frame-pair" onShowDetail={(item) => setSelectedVideo(item)} />
+          <ResultsTable items={framePairs} mediaType="frame-pair" onShowDetail={(item) => setSelectedVideo(item)} onClearMedia={(id) => setFramePairs(prev => prev.map(fp => fp.id === id ? { ...fp, base64: null, status: 'pending' } : fp))} />
         )}
         {activeTab === 'list' && (
           <ResultsTable

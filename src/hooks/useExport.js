@@ -74,7 +74,7 @@ export function useExport({
   }
 
   // Handle export confirm from modal
-  const handleExportConfirm = async ({ capcutProjectNumber, scaleMode, kenBurns, kenBurnsMode, kenBurnsCycle, kenBurnsScaleMin, kenBurnsScaleMax, subtitleOption }) => {
+  const handleExportConfirm = async ({ capcutProjectNumber, scaleMode, kenBurns, kenBurnsMode, kenBurnsCycle, kenBurnsScaleMin, kenBurnsScaleMax, subtitleOption, subtitleFontSize }) => {
     const validScenes = scenes.filter(s => s.image || s.imagePath || s.videoT2V || s.videoI2V)
 
     // 파일 경로가 있는 씬이 있으면 권한 확인
@@ -168,6 +168,7 @@ export function useExport({
         kenBurnsScaleMin,
         kenBurnsScaleMax,
         subtitleOption,
+        subtitleFontSize,
         audioPackage
       })
 

@@ -105,6 +105,7 @@ async function prepareCloudRequest(project, options = {}) {
     kenBurnsScaleMin = 1.0,  // 스케일 최소값 (1.0 = 100%)
     kenBurnsScaleMax = 1.3, // 스케일 최대값 (1.3 = 130%)
     subtitleOption = 'both',
+    subtitleFontSize = 8,
     capcutProjectNumber = '',
     audioPackage = null
   } = options;
@@ -306,6 +307,7 @@ async function prepareCloudRequest(project, options = {}) {
         scaleMax: kenBurnsScaleMax
       },
       subtitleOption,
+      subtitleFontSize,
       srtEntries: audioPackage?.srtEntries || null,
       scenes: cloudScenes,
       videoOverlays: cloudVideoOverlays.length > 0 ? cloudVideoOverlays : undefined,
