@@ -18,7 +18,19 @@ cd mcp-server
 npm install
 ```
 
-### 2. Claude Code에 등록 (`.mcp.json`)
+### 2. Claude Code에 등록
+
+#### 방법 A: 글로벌 설정 (모든 프로젝트에서 사용) — 권장
+
+```bash
+claude mcp add --scope user --transport stdio flow2capcut -- node /path/to/Flow2CapCut/mcp-server/index.js
+```
+
+`~/.claude.json`의 `mcpServers`에 저장됩니다.
+
+#### 방법 B: 프로젝트 로컬 설정 (특정 프로젝트에서만 사용)
+
+프로젝트 루트에 `.mcp.json` 생성:
 
 ```json
 {
@@ -29,6 +41,24 @@ npm install
     }
   }
 }
+```
+
+#### 설정 우선순위
+
+Claude Code는 MCP 서버를 3가지 스코프로 관리하며, 같은 이름이 여러 곳에 있으면 아래 순서로 우선합니다:
+
+| 우선순위 | 스코프 | 파일 | 공유 범위 |
+|---------|--------|------|---------|
+| 1 | Local | `.claude/settings.local.json` | 개인 (Git 무시) |
+| 2 | Project | `.mcp.json` | 팀 공유 (Git 커밋) |
+| 3 | User (글로벌) | `~/.claude.json` | 개인, 모든 프로젝트 |
+
+> **참고:** `~/.claude/settings.json`의 `mcpServers`는 Claude Code가 읽지 않습니다. 반드시 `claude mcp add --scope user` 또는 `~/.claude.json`을 사용하세요.
+
+#### 등록 확인
+
+```bash
+claude mcp list
 ```
 
 ### 3. 앱 설정

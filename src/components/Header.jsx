@@ -8,6 +8,7 @@ import { TIMING } from '../config/defaults'
 import { fileSystemAPI } from '../hooks/useFileSystem'
 import { UserMenu } from './UserMenu'
 import { SideDrawer } from './SideDrawer'
+import Modal from './Modal'
 import './Header.css'
 
 export default function Header({
@@ -29,6 +30,7 @@ export default function Header({
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
   const [showDrawer, setShowDrawer] = useState(false)
   const [projects, setProjects] = useState([])
+  const [deleteTarget, setDeleteTarget] = useState(null) // Confirm 모달용
   const dropdownRef = useRef(null)
   const pollingRef = useRef(null)
   
@@ -143,6 +145,30 @@ export default function Header({
     setShowProjectDropdown(false)
     onNewProject()
   }
+
+  const handleDeleteClick = (e, name) => {
+    e.stopPropagation()
+    setDeleteTarget(name)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+    const result = await fileSystemAPI.deleteProject(deleteTarget)
+    if (result.success) {
+      setProjects(prev => prev.filter(p => p !== deleteTarget))
+      // 현재 프로젝트를 삭제한 경우 다른 프로젝트로 전환
+      if (deleteTarget === projectName) {
+        const remaining = projects.filter(p => p !== deleteTarget)
+        if (remaining.length > 0) {
+          onProjectChange(remaining[0])
+        } else {
+          onNewProject()
+        }
+      }
+    }
+    setDeleteTarget(null)
+    setShowProjectDropdown(false)
+  }
   
   return (
     <>
@@ -179,13 +205,22 @@ export default function Header({
                   <div className="project-empty">{t('settings.noProjects')}</div>
                 ) : (
                   projects.map(p => (
-                    <div 
+                    <div
                       key={p}
                       className={`project-option ${p === projectName ? 'active' : ''}`}
                       onClick={() => handleProjectSelect(p)}
                     >
-                      {p}
-                      {p === projectName && <span className="check">✓</span>}
+                      <span className="project-option-name">{p}</span>
+                      <span className="project-option-actions">
+                        {p === projectName && <span className="check">✓</span>}
+                        <button
+                          className="project-delete-btn"
+                          onClick={(e) => handleDeleteClick(e, p)}
+                          title={t('settings.deleteProject') || '삭제'}
+                        >
+                          ✕
+                        </button>
+                      </span>
                     </div>
                   ))
                 )}
@@ -254,6 +289,28 @@ export default function Header({
         <UserMenu onLoginClick={onLoginClick} onUpgradeClick={onUpgradeClick} />
       </div>
     </header>
+
+    {/* 프로젝트 삭제 확인 모달 */}
+    <Modal
+      isOpen={!!deleteTarget}
+      onClose={() => setDeleteTarget(null)}
+      title={t('settings.deleteProject') || '프로젝트 삭제'}
+      className="modal-confirm-delete"
+      footer={
+        <div className="modal-confirm-actions">
+          <button className="btn-cancel" onClick={() => setDeleteTarget(null)}>
+            {t('common.cancel') || '취소'}
+          </button>
+          <button className="btn-danger" onClick={handleDeleteConfirm}>
+            {t('common.delete') || '삭제'}
+          </button>
+        </div>
+      }
+    >
+      <p className="modal-confirm-msg">
+        <strong>"{deleteTarget}"</strong> {t('settings.deleteConfirm') || '프로젝트를 삭제하시겠습니까?\n모든 이미지와 데이터가 삭제됩니다.'}
+      </p>
+    </Modal>
 
     {/* 사이드 드로워 */}
     <SideDrawer isOpen={showDrawer} onClose={() => setShowDrawer(false)} />

@@ -300,6 +300,7 @@ function App() {
 
   // MCP HTTP GET 요청을 위한 글로벌 접근자 등록
   useEffect(() => {
+    window.__mcpOpenProject = (name) => handleProjectChange(name)
     window.__mcpGetReferences = () => references.map(({ data, ...rest }) => rest)
     window.__mcpGetScenes = () => scenes.map(({ image, videoT2V, videoI2V, ...rest }) => rest)
     window.__mcpGenerateRef = (index) => handleGenerateRef(index).catch(e => ({ success: false, error: e.message }))
@@ -392,9 +393,15 @@ function App() {
       } else if (data.type === 'generate-scene') {
         console.log('[MCP] Generate scene requested:', data.sceneId)
         window.__mcpGenerateScene?.(data.sceneId)
-      } else if (data.type === 'start-batch') {
-        console.log('[MCP] Batch generation start requested')
-        window.__mcpStartBatch?.()
+      } else if (data.type === 'open-project') {
+        console.log('[MCP] Open project requested:', data.projectName)
+        window.__mcpOpenProject?.(data.projectName)
+      } else if (data.type === 'start-scene-batch') {
+        console.log('[MCP] Scene batch generation start requested, styleId:', data.styleId)
+        window.__mcpStartBatch?.(data.styleId)
+      } else if (data.type === 'start-ref-batch') {
+        console.log('[MCP] Reference batch generation start requested, styleId:', data.styleId)
+        window.__mcpStartRefBatch?.(data.styleId)
       } else if (data.type === 'reload-project') {
         // 프로젝트 전체 리로드 트리거
         console.log('[MCP] Project reload requested')
@@ -700,7 +707,18 @@ function App() {
 
   // MCP: handleStart/handleStop/batchStatus 글로벌 등록 (정의 이후에 등록해야 함)
   useEffect(() => {
-    window.__mcpStartBatch = () => handleStart()
+    window.__mcpStartBatch = (styleId) => {
+      if (styleId) {
+        setSelectedStyleRefId(`preset:${styleId}`)
+      }
+      setTimeout(() => handleStart(), 100)
+    }
+    window.__mcpStartRefBatch = (styleId) => {
+      if (styleId) {
+        setSelectedStyleRefId(`preset:${styleId}`)
+      }
+      setTimeout(() => handleGenerateAllRefs(), 100)
+    }
     window.__mcpStopBatch = () => handleStop()
     window.__mcpBatchStatus = () => {
       const total = scenes.length
@@ -719,10 +737,11 @@ function App() {
     }
     return () => {
       delete window.__mcpStartBatch
+      delete window.__mcpStartRefBatch
       delete window.__mcpStopBatch
       delete window.__mcpBatchStatus
     }
-  }, [handleStart, handleStop, scenes, isRunning, isPaused, progress, status, statusMessage, videoAutomation])
+  }, [handleStart, handleStop, handleGenerateAllRefs, scenes, isRunning, isPaused, progress, status, statusMessage, videoAutomation])
 
   // 어느 자동화든 실행 중이면 true
   const anyRunning = isRunning || videoAutomation.isRunning

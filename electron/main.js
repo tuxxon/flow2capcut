@@ -1,5 +1,6 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, shell, protocol, net } from 'electron'
 import http from 'node:http'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
@@ -954,7 +955,7 @@ function startMcpHttpServer(port) {
   mcpHttpServer = http.createServer((req, res) => {
     // CORS: localhost만 허용
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     res.setHeader('Content-Type', 'application/json')
 
@@ -1103,12 +1104,43 @@ function startMcpHttpServer(port) {
           return
         }
 
-        // POST /api/start-batch — 일괄 생성 시작
-        if (req.method === 'POST' && pathname === '/api/start-batch') {
+        // POST /api/start-scene-batch — 씬 일괄 생성 시작
+        if (req.method === 'POST' && pathname === '/api/start-scene-batch') {
           if (mainWindow) {
-            mainWindow.webContents.send('mcp-update', { type: 'start-batch' })
-            res.writeHead(200)
-            res.end(JSON.stringify({ success: true, message: 'Batch generation started' }))
+            let bodyStr = ''
+            req.on('data', chunk => { bodyStr += chunk })
+            req.on('end', () => {
+              let styleId = null
+              try {
+                const parsed = JSON.parse(bodyStr)
+                styleId = parsed.styleId || null
+              } catch {}
+              mainWindow.webContents.send('mcp-update', { type: 'start-scene-batch', styleId })
+              res.writeHead(200)
+              res.end(JSON.stringify({ success: true, message: 'Scene batch generation started', styleId }))
+            })
+          } else {
+            res.writeHead(503)
+            res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
+        // POST /api/start-ref-batch — 레퍼런스 일괄 생성 시작
+        if (req.method === 'POST' && pathname === '/api/start-ref-batch') {
+          if (mainWindow) {
+            let bodyStr = ''
+            req.on('data', chunk => { bodyStr += chunk })
+            req.on('end', () => {
+              let styleId = null
+              try {
+                const parsed = JSON.parse(bodyStr)
+                styleId = parsed.styleId || null
+              } catch {}
+              mainWindow.webContents.send('mcp-update', { type: 'start-ref-batch', styleId })
+              res.writeHead(200)
+              res.end(JSON.stringify({ success: true, message: 'Reference batch generation started', styleId }))
+            })
           } else {
             res.writeHead(503)
             res.end(JSON.stringify({ error: 'App not ready' }))
@@ -1199,6 +1231,162 @@ function startMcpHttpServer(port) {
           } else {
             res.writeHead(503)
             res.end(JSON.stringify({ error: 'App not ready' }))
+          }
+          return
+        }
+
+        // ── 프로젝트 관리 API ──────────────────────────
+
+        // GET /api/projects — 프로젝트 목록 조회
+        if (req.method === 'GET' && pathname === '/api/projects') {
+          try {
+            const configPath = path.join(app.getPath('userData'), 'work-folder-config.json')
+            let workFolder
+            try {
+              const config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
+              workFolder = config.path
+            } catch {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'No work folder configured. Open the app and select a work folder first.' }))
+              return
+            }
+            const entries = await fs.readdir(workFolder, { withFileTypes: true })
+            const projects = []
+            for (const e of entries) {
+              if (!e.isDirectory()) continue
+              const projJsonPath = path.join(workFolder, e.name, 'project.json')
+              let hasProject = false
+              try { await fs.access(projJsonPath); hasProject = true } catch {}
+              projects.push({ name: e.name, hasProjectJson: hasProject })
+            }
+            projects.sort((a, b) => b.name.localeCompare(a.name))
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, workFolder, projects }))
+          } catch (err) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
+          }
+          return
+        }
+
+        // POST /api/projects — 프로젝트 생성
+        if (req.method === 'POST' && pathname === '/api/projects') {
+          try {
+            const configPath = path.join(app.getPath('userData'), 'work-folder-config.json')
+            let workFolder
+            try {
+              const config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
+              workFolder = config.path
+            } catch {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'No work folder configured.' }))
+              return
+            }
+            const data = JSON.parse(body)
+            const projectName = data.name
+            if (!projectName) {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'name required' }))
+              return
+            }
+            const projectDir = path.join(workFolder, projectName)
+            // 이미 존재하는지 확인
+            try {
+              await fs.access(projectDir)
+              res.writeHead(409)
+              res.end(JSON.stringify({ error: `Project "${projectName}" already exists` }))
+              return
+            } catch { /* 없으면 정상 */ }
+            // 디렉토리 + 하위 폴더 생성
+            for (const sub of ['scenes', 'scenes/history', 'references', 'references/history', 'images', 'images/history', 'videos', 'videos/history', 'sfx', 'sfx/history']) {
+              await fs.mkdir(path.join(projectDir, sub), { recursive: true })
+            }
+            // 빈 project.json 생성
+            const projectJson = { scenes: [], references: [], settings: { aspectRatio: '16:9', defaultDuration: 3 } }
+            await fs.writeFile(path.join(projectDir, 'project.json'), JSON.stringify(projectJson, null, 2), 'utf-8')
+            // 앱에 프로젝트 오픈 알림 (renderer가 있으면)
+            if (mainWindow) {
+              mainWindow.webContents.send('mcp-update', { type: 'open-project', projectName, workFolder })
+            }
+            res.writeHead(201)
+            res.end(JSON.stringify({ success: true, projectDir, projectName }))
+          } catch (err) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
+          }
+          return
+        }
+
+        // PUT /api/projects — 프로젝트 이름 변경
+        if (req.method === 'PUT' && pathname === '/api/projects') {
+          try {
+            const configPath = path.join(app.getPath('userData'), 'work-folder-config.json')
+            let workFolder
+            try {
+              const config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
+              workFolder = config.path
+            } catch {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'No work folder configured.' }))
+              return
+            }
+            const data = JSON.parse(body)
+            const { oldName, newName } = data
+            if (!oldName || !newName) {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'oldName and newName required' }))
+              return
+            }
+            const oldDir = path.join(workFolder, oldName)
+            const newDir = path.join(workFolder, newName)
+            try { await fs.access(oldDir) } catch {
+              res.writeHead(404)
+              res.end(JSON.stringify({ error: `Project "${oldName}" not found` }))
+              return
+            }
+            try { await fs.access(newDir); res.writeHead(409); res.end(JSON.stringify({ error: `Project "${newName}" already exists` })); return } catch { /* ok */ }
+            await fs.rename(oldDir, newDir)
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, oldName, newName }))
+          } catch (err) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
+          }
+          return
+        }
+
+        // DELETE /api/projects — 프로젝트 삭제
+        if (req.method === 'DELETE' && pathname === '/api/projects') {
+          try {
+            const configPath = path.join(app.getPath('userData'), 'work-folder-config.json')
+            let workFolder
+            try {
+              const config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
+              workFolder = config.path
+            } catch {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'No work folder configured.' }))
+              return
+            }
+            const data = JSON.parse(body)
+            const projectName = data.name
+            if (!projectName) {
+              res.writeHead(400)
+              res.end(JSON.stringify({ error: 'name required' }))
+              return
+            }
+            const projectDir = path.join(workFolder, projectName)
+            try { await fs.access(projectDir) } catch {
+              res.writeHead(404)
+              res.end(JSON.stringify({ error: `Project "${projectName}" not found` }))
+              return
+            }
+            await fs.rm(projectDir, { recursive: true, force: true })
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, deleted: projectName }))
+          } catch (err) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
           }
           return
         }

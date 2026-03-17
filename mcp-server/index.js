@@ -396,6 +396,54 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['name', 'prompt'],
       },
     },
+    // ── 프로젝트 관리 도구 ──
+    {
+      name: 'app_list_projects',
+      description: 'Flow2CapCut 작업 폴더의 프로젝트 목록을 조회합니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+        },
+      },
+    },
+    {
+      name: 'app_create_project',
+      description: '새 프로젝트를 생성합니다. 디렉토리 구조와 빈 project.json이 자동 생성되고, 앱에 프로젝트 오픈 알림이 전달됩니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+          name: { type: 'string', description: '프로젝트 이름' },
+        },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'app_rename_project',
+      description: '기존 프로젝트의 이름을 변경합니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+          oldName: { type: 'string', description: '현재 프로젝트 이름' },
+          newName: { type: 'string', description: '새 프로젝트 이름' },
+        },
+        required: ['oldName', 'newName'],
+      },
+    },
+    {
+      name: 'app_delete_project',
+      description: '프로젝트를 완전히 삭제합니다. 되돌릴 수 없습니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+          name: { type: 'string', description: '삭제할 프로젝트 이름' },
+        },
+        required: ['name'],
+      },
+    },
     // ── HTTP 기반 앱 직접 제어 도구 ──
     {
       name: 'app_status',
@@ -485,12 +533,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: 'app_start_batch',
-      description: '실행 중인 Flow2CapCut 앱에서 일괄 생성(생성 시작 버튼)을 트리거합니다. pending 상태인 씬들의 이미지를 자동 생성합니다.',
+      name: 'app_start_scene_batch',
+      description: '실행 중인 Flow2CapCut 앱에서 씬 일괄 생성(생성 시작 버튼)을 트리거합니다. pending 상태인 씬들의 이미지를 자동 생성합니다.',
       inputSchema: {
         type: 'object',
         properties: {
           port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+          styleId: { type: 'string', description: '스타일 ID (예: "korean-ani"). list_styles로 조회 가능.' },
+        },
+      },
+    },
+    {
+      name: 'app_start_ref_batch',
+      description: '실행 중인 Flow2CapCut 앱에서 레퍼런스 일괄 생성을 트리거합니다. 모든 레퍼런스의 이미지를 자동 생성합니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          port: { type: 'number', description: 'HTTP 서버 포트 (기본: 3210)' },
+          styleId: { type: 'string', description: '스타일 ID (예: "korean-ani"). list_styles로 조회 가능.' },
         },
       },
     },
@@ -583,8 +643,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['folder_path', 'relative_path', 'action'],
       },
     },
+    {
+      name: 'list_styles',
+      description: '스타일 프리셋 목록을 카테고리별로 반환합니다. style_presets.json을 읽어 스타일 id, 이름, prompt_en을 보여줍니다.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', description: '카테고리 ID로 필터링 (예: "animation", "film"). 생략하면 전체 카테고리 반환' },
+          lang: { type: 'string', enum: ['ko', 'en'], description: '이름 언어 선택 (기본: ko)' },
+        },
+      },
+    },
   ],
 }));
+
+// ── 스타일 프리셋 경로 ──────────────────────────────────────────
+const STYLE_PRESETS_PATH = path.resolve(new URL('.', import.meta.url).pathname, '..', 'src', 'config', 'style_presets.json');
 
 // ── 문제 씬 DB ────────────────────────────────────────────────
 
@@ -657,6 +731,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         sceneMode = args.mode || 'image';
         const data = loadCSV(csvPath);
         headers = data.headers;
+
+        // references CSV 자동 감지: name+type+prompt 있고 scene_tag 없으면 references
+        const lowerHeaders = headers.map(h => h.toLowerCase());
+        const isReferencesCSV = lowerHeaders.includes('name') && lowerHeaders.includes('type') && lowerHeaders.includes('prompt') && !lowerHeaders.includes('scene_tag');
+
+        if (isReferencesCSV) {
+          // references CSV → 앱의 레퍼런스로 전달
+          const TYPE_TO_CATEGORY = { character: 'MEDIA_CATEGORY_SUBJECT', scene: 'MEDIA_CATEGORY_SCENE', background: 'MEDIA_CATEGORY_SCENE', style: 'MEDIA_CATEGORY_STYLE' };
+          const refs = data.scenes.map(row => {
+            const type = (row.type || 'character').toLowerCase().trim();
+            const typeValue = (type === 'scene' || type === 'background') ? 'scene' : type === 'style' ? 'style' : 'character';
+            return {
+              name: (row.name || '').trim(),
+              type: typeValue,
+              category: TYPE_TO_CATEGORY[type] || 'MEDIA_CATEGORY_SUBJECT',
+              prompt: (row.prompt || '').trim(),
+            };
+          }).filter(r => r.name);
+
+          // 앱에 update-references 전달
+          const port = args.port || 3210;
+          try {
+            await appFetch(port, 'POST', '/api/update', { type: 'update-references', references: refs });
+          } catch { /* 앱 미실행 시 무시 */ }
+
+          return {
+            content: [{
+              type: 'text',
+              text: `레퍼런스 CSV 로드 완료: ${refs.length}개 레퍼런스 (캐릭터 ${refs.filter(r => r.type === 'character').length}, 씬 ${refs.filter(r => r.type === 'scene').length}, 스타일 ${refs.filter(r => r.type === 'style').length})`,
+            }],
+          };
+        }
+
+        // scenes CSV
         scenes = data.scenes;
         // project.json 자동 로드 (미디어 디렉토리 기준으로 2단계 상위)
         let projectLoaded = false;
@@ -922,6 +1030,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      // ── 프로젝트 관리 ──
+
+      case 'app_list_projects': {
+        const port = args.port || 3210;
+        const res = await appFetch(port, 'GET', '/api/projects');
+        if (res.data?.error) {
+          return { content: [{ type: 'text', text: `오류: ${res.data.error}` }] };
+        }
+        const projects = res.data?.projects || [];
+        const summary = projects.map(p =>
+          `- ${p.name}${p.hasProjectJson ? '' : ' (빈 폴더)'}`
+        ).join('\n');
+        return {
+          content: [{ type: 'text', text: `작업폴더: ${res.data?.workFolder}\n프로젝트 ${projects.length}개:\n${summary || '(없음)'}` }],
+        };
+      }
+
+      case 'app_create_project': {
+        const port = args.port || 3210;
+        const res = await appFetch(port, 'POST', '/api/projects', { name: args.name });
+        if (res.status === 201) {
+          return { content: [{ type: 'text', text: `프로젝트 생성 완료: ${args.name}\n경로: ${res.data.projectDir}` }] };
+        }
+        return { content: [{ type: 'text', text: `오류 (${res.status}): ${res.data?.error || JSON.stringify(res.data)}` }] };
+      }
+
+      case 'app_rename_project': {
+        const port = args.port || 3210;
+        const res = await appFetch(port, 'PUT', '/api/projects', { oldName: args.oldName, newName: args.newName });
+        if (res.status === 200) {
+          return { content: [{ type: 'text', text: `이름 변경 완료: ${args.oldName} → ${args.newName}` }] };
+        }
+        return { content: [{ type: 'text', text: `오류 (${res.status}): ${res.data?.error || JSON.stringify(res.data)}` }] };
+      }
+
+      case 'app_delete_project': {
+        const port = args.port || 3210;
+        const res = await appFetch(port, 'DELETE', '/api/projects', { name: args.name });
+        if (res.status === 200) {
+          return { content: [{ type: 'text', text: `프로젝트 삭제 완료: ${args.name}` }] };
+        }
+        return { content: [{ type: 'text', text: `오류 (${res.status}): ${res.data?.error || JSON.stringify(res.data)}` }] };
+      }
+
       // ── HTTP 기반 앱 직접 제어 ──
 
       case 'app_status': {
@@ -1000,11 +1152,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case 'app_start_batch': {
+      case 'app_start_scene_batch': {
         const port = args.port || 3210;
-        const res = await appFetch(port, 'POST', '/api/start-batch');
+        const body = args.styleId ? { styleId: args.styleId } : null;
+        const res = await appFetch(port, 'POST', '/api/start-scene-batch', body);
         return {
-          content: [{ type: 'text', text: `일괄 생성 시작: ${JSON.stringify(res.data)}` }],
+          content: [{ type: 'text', text: `씬 일괄 생성 시작: ${JSON.stringify(res.data)}` }],
+        };
+      }
+
+      case 'app_start_ref_batch': {
+        const port = args.port || 3210;
+        const body = args.styleId ? { styleId: args.styleId } : null;
+        const res = await appFetch(port, 'POST', '/api/start-ref-batch', body);
+        return {
+          content: [{ type: 'text', text: `레퍼런스 일괄 생성 시작: ${JSON.stringify(res.data)}` }],
         };
       }
 
@@ -1289,6 +1451,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [{ type: 'text', text: `마크 해제: ${args.relative_path}` }],
           };
         }
+      }
+
+      case 'list_styles': {
+        if (!fs.existsSync(STYLE_PRESETS_PATH)) {
+          throw new Error(`스타일 프리셋 파일이 없습니다: ${STYLE_PRESETS_PATH}`);
+        }
+        const presets = JSON.parse(fs.readFileSync(STYLE_PRESETS_PATH, 'utf-8'));
+        const lang = args.lang || 'ko';
+        const nameKey = lang === 'en' ? 'name_en' : 'name_ko';
+
+        // 카테고리 필터링
+        let categories = presets.categories;
+        let styles = presets.styles;
+        if (args.category) {
+          categories = categories.filter(c => c.id === args.category);
+          styles = styles.filter(s => s.category === args.category);
+          if (categories.length === 0) {
+            const validIds = presets.categories.map(c => c.id).join(', ');
+            throw new Error(`알 수 없는 카테고리: "${args.category}". 가능: ${validIds}`);
+          }
+        }
+
+        // 카테고리별로 그룹핑하여 결과 생성
+        const result = categories.map(cat => {
+          const catStyles = styles.filter(s => s.category === cat.id);
+          return {
+            category_id: cat.id,
+            category_name: cat[nameKey] || cat.name_en,
+            icon: cat.icon,
+            styles: catStyles.map(s => ({
+              id: s.id,
+              name: s[nameKey] || s.name_en,
+              prompt_en: s.prompt_en,
+            })),
+          };
+        });
+
+        const totalStyles = result.reduce((sum, cat) => sum + cat.styles.length, 0);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              total_categories: result.length,
+              total_styles: totalStyles,
+              categories: result,
+            }, null, 2),
+          }],
+        };
       }
 
       default:

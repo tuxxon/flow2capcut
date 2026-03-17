@@ -27,7 +27,17 @@ npm install
 
 ### 3. Claude Code에 MCP 서버 등록
 
-프로젝트 루트 또는 \`~/.claude/\`에 \`.mcp.json\` 파일을 생성합니다:
+#### 글로벌 설정 (모든 프로젝트에서 사용) — 권장
+
+\`\`\`bash
+claude mcp add --scope user --transport stdio flow2capcut -- node /path/to/Flow2CapCut/mcp-server/index.js
+\`\`\`
+
+\`~/.claude.json\`의 \`mcpServers\`에 저장됩니다.
+
+#### 프로젝트 로컬 설정 (특정 프로젝트에서만 사용)
+
+프로젝트 루트에 \`.mcp.json\` 파일을 생성합니다:
 
 \`\`\`json
 {
@@ -40,10 +50,22 @@ npm install
 }
 \`\`\`
 
+#### 설정 우선순위
+
+| 우선순위 | 스코프 | 파일 | 공유 범위 |
+|---------|--------|------|---------|
+| 1 | Local | \`.claude/settings.local.json\` | 개인 (Git 무시) |
+| 2 | Project | \`.mcp.json\` | 팀 공유 (Git 커밋) |
+| 3 | User (글로벌) | \`~/.claude.json\` | 개인, 모든 프로젝트 |
+
+> **주의:** \`~/.claude/settings.json\`의 \`mcpServers\`는 Claude Code가 읽지 않습니다. 반드시 \`claude mcp add --scope user\` 또는 \`~/.claude.json\`을 사용하세요.
+
 ### 4. 확인
 
-Claude Code를 실행하면 MCP 도구들이 자동으로 사용 가능해집니다.
-HTTP API는 \`curl http://127.0.0.1:3210/api/status\` 로 확인할 수 있습니다.
+\`\`\`bash
+claude mcp list          # 등록된 MCP 서버 목록 확인
+curl http://127.0.0.1:3210/api/status   # HTTP API 상태 확인
+\`\`\`
 
 ## 아키텍처
 
@@ -62,6 +84,10 @@ Claude Code ── stdio ──▶ MCP Server (mcp-server/index.js)
 
 | MCP 도구 | HTTP 엔드포인트 | 설명 |
 |----------|----------------|------|
+| \`app_list_projects\` | \`GET /api/projects\` | 프로젝트 목록 |
+| \`app_create_project\` | \`POST /api/projects\` | 프로젝트 생성 |
+| \`app_rename_project\` | \`PUT /api/projects\` | 프로젝트 이름 변경 |
+| \`app_delete_project\` | \`DELETE /api/projects\` | 프로젝트 삭제 |
 | \`app_status\` | \`GET /api/status\` | 서버 상태 확인 |
 | \`app_get_references\` | \`GET /api/references\` | 레퍼런스 목록 |
 | \`app_update_reference\` | \`POST /api/update\` | 레퍼런스 수정 |
@@ -69,7 +95,8 @@ Claude Code ── stdio ──▶ MCP Server (mcp-server/index.js)
 | \`app_update_scene\` | \`POST /api/update\` | 씬 수정 |
 | \`app_generate_reference\` | \`POST /api/generate-reference\` | 레퍼런스 이미지 생성 |
 | \`app_generate_scene\` | \`POST /api/generate-scene\` | 개별 씬 이미지 생성 |
-| \`app_start_batch\` | \`POST /api/start-batch\` | 일괄 생성 시작 |
+| \`app_start_scene_batch\` | \`POST /api/start-scene-batch\` | 씬 일괄 생성 시작 |
+| \`app_start_ref_batch\` | \`POST /api/start-ref-batch\` | 레퍼런스 일괄 생성 시작 |
 | \`app_batch_status\` | \`GET /api/batch-status\` | 배치 진행 상태 |
 | \`app_wait_batch\` | *(MCP 전용 — 폴링)* | 배치 완료 대기 |
 
@@ -110,7 +137,7 @@ curl -X POST http://127.0.0.1:3210/api/update \\
   -d '{"type":"update-scene","index":5,"fields":{"prompt":"새 프롬프트...","imagePath":null,"status":"pending"}}'
 
 # 2. 일괄 생성 시작
-curl -X POST http://127.0.0.1:3210/api/start-batch
+curl -X POST http://127.0.0.1:3210/api/start-scene-batch
 
 # 3. 진행 상태 확인
 curl http://127.0.0.1:3210/api/batch-status
@@ -128,6 +155,7 @@ curl http://127.0.0.1:3210/api/batch-status
     { url: 'http://127.0.0.1:3210', description: 'Local Flow2CapCut' },
   ],
   tags: [
+    { name: '프로젝트', description: '프로젝트 생성/목록/수정/삭제' },
     { name: '상태', description: '서버 및 배치 상태 확인' },
     { name: '레퍼런스', description: '레퍼런스 이미지 관리' },
     { name: '씬', description: '씬 데이터 관리' },
@@ -135,6 +163,126 @@ curl http://127.0.0.1:3210/api/batch-status
     { name: '범용', description: '범용 상태 업데이트' },
   ],
   paths: {
+    '/api/projects': {
+      get: {
+        tags: ['프로젝트'],
+        summary: '프로젝트 목록 조회',
+        description: '작업 폴더 내 모든 프로젝트 목록을 반환합니다. 각 프로젝트의 project.json 존재 여부도 포함됩니다.',
+        responses: {
+          200: {
+            description: '프로젝트 목록',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    workFolder: { type: 'string', description: '작업 폴더 절대 경로' },
+                    projects: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string', description: '프로젝트 이름' },
+                          hasProjectJson: { type: 'boolean', description: 'project.json 존재 여부' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: '작업 폴더 미설정' },
+        },
+      },
+      post: {
+        tags: ['프로젝트'],
+        summary: '프로젝트 생성',
+        description: '새 프로젝트를 생성합니다. 디렉토리 구조(scenes, references, images, videos, sfx + history)와 빈 project.json이 자동 생성됩니다.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name'],
+                properties: {
+                  name: { type: 'string', description: '프로젝트 이름', example: '무한야담_ep10' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: '프로젝트 생성 완료',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    projectDir: { type: 'string', description: '생성된 프로젝트 절대 경로' },
+                    projectName: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'name 누락 또는 작업 폴더 미설정' },
+          409: { description: '같은 이름의 프로젝트가 이미 존재' },
+        },
+      },
+      put: {
+        tags: ['프로젝트'],
+        summary: '프로젝트 이름 변경',
+        description: '기존 프로젝트의 디렉토리 이름을 변경합니다.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['oldName', 'newName'],
+                properties: {
+                  oldName: { type: 'string', description: '현재 프로젝트 이름', example: 'ep10' },
+                  newName: { type: 'string', description: '새 프로젝트 이름', example: '무한야담_ep10' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: '이름 변경 완료', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, oldName: { type: 'string' }, newName: { type: 'string' } } } } } },
+          404: { description: '원본 프로젝트 없음' },
+          409: { description: '새 이름의 프로젝트가 이미 존재' },
+        },
+      },
+      delete: {
+        tags: ['프로젝트'],
+        summary: '프로젝트 삭제',
+        description: '프로젝트 디렉토리를 완전히 삭제합니다. **되돌릴 수 없으므로 주의하세요.**',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name'],
+                properties: {
+                  name: { type: 'string', description: '삭제할 프로젝트 이름', example: 'test-project' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: '삭제 완료', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, deleted: { type: 'string' } } } } } },
+          404: { description: '프로젝트 없음' },
+        },
+      },
+    },
     '/api/status': {
       get: {
         tags: ['상태'],
@@ -231,7 +379,8 @@ curl http://127.0.0.1:3210/api/batch-status
 - \`update-scene\`: 특정 씬 수정 (index + fields)
 - \`generate-reference\`: 레퍼런스 생성 트리거 (index + styleId?)
 - \`generate-scene\`: 씬 생성 트리거 (sceneId)
-- \`start-batch\`: 일괄 생성 시작`,
+- \`start-scene-batch\`: 씬 일괄 생성 시작
+- \`start-ref-batch\`: 레퍼런스 일괄 생성 시작`,
         requestBody: {
           required: true,
           content: {
@@ -315,13 +464,24 @@ curl http://127.0.0.1:3210/api/batch-status
         },
       },
     },
-    '/api/start-batch': {
+    '/api/start-scene-batch': {
       post: {
         tags: ['생성'],
-        summary: '일괄 생성 시작',
+        summary: '씬 일괄 생성 시작',
         description: 'pending/error 상태인 모든 씬의 이미지를 일괄 생성합니다. 앱의 "생성 시작" 버튼과 동일한 동작입니다. Body 없이 POST합니다.',
         responses: {
-          200: { description: '일괄 생성 시작됨', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } } },
+          200: { description: '씬 일괄 생성 시작됨', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } } },
+          503: { description: '앱이 준비되지 않음' },
+        },
+      },
+    },
+    '/api/start-ref-batch': {
+      post: {
+        tags: ['생성'],
+        summary: '레퍼런스 일괄 생성 시작',
+        description: '모든 레퍼런스의 이미지를 일괄 생성합니다. Body 없이 POST합니다.',
+        responses: {
+          200: { description: '레퍼런스 일괄 생성 시작됨', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } } },
           503: { description: '앱이 준비되지 않음' },
         },
       },
@@ -377,7 +537,7 @@ curl http://127.0.0.1:3210/api/batch-status
         properties: {
           type: {
             type: 'string',
-            enum: ['update-references', 'update-reference', 'update-scenes', 'update-scene', 'generate-reference', 'generate-scene', 'start-batch'],
+            enum: ['update-references', 'update-reference', 'update-scenes', 'update-scene', 'generate-reference', 'generate-scene', 'start-scene-batch', 'start-ref-batch'],
           },
           index: { type: 'integer', description: '대상 인덱스 (0-based)' },
           fields: { type: 'object', description: '수정할 필드 객체' },

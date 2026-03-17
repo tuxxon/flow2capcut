@@ -180,6 +180,19 @@ export const fileSystemAPI = {
     }
   },
 
+  async deleteProject(projectName) {
+    try {
+      const workFolder = localStorage.getItem('workFolderPath')
+      if (!workFolder) {
+        return { success: false, error: 'not_set' }
+      }
+      const result = await window.electronAPI.deleteProject({ workFolder, project: projectName })
+      return result
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  },
+
   /**
    * Get (or ensure existence of) a project folder.
    * Returns path string instead of a FileSystemDirectoryHandle.
