@@ -156,7 +156,7 @@ function SceneRow({ scene, index, onUpdate, onDelete, disabled, ratioClass, t, o
         <input
           type="number"
           className="duration-input"
-          value={scene.duration}
+          value={Math.round(scene.duration * 100) / 100}
           onChange={(e) => {
             const duration = parseFloat(e.target.value) || 3
             const updates = {
@@ -434,7 +434,7 @@ export default function SceneList({
     )
   }
 
-  const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0)
+  const totalDuration = scenes.reduce((sum, s) => sum + (parseFloat(s.duration) || 0), 0)
 
   const ratioClass = getRatioClass(aspectRatio)
 

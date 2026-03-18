@@ -14,9 +14,30 @@ import {
 } from '../utils/parsers'
 import { fileSystemAPI } from './useFileSystem'
 
+// snake_case → camelCase 변환 + 숫자 변환
+function normalizeScene(s, i) {
+  const startTime = parseFloat(s.startTime ?? s.start_time) || 0
+  const duration = parseFloat(s.duration) || 3
+  const endTime = parseFloat(s.endTime ?? s.end_time) || (startTime + duration)
+  return {
+    ...s,
+    id: s.id || `scene_${i + 1}`,
+    startTime,
+    endTime,
+    duration: endTime - startTime || duration,
+  }
+}
+
 export function useScenes() {
-  const [scenes, setScenes] = useState([])
+  const [scenes, _setScenes] = useState([])
   const [references, setReferences] = useState([])
+
+  const setScenes = useCallback((valueOrFn) => {
+    _setScenes(prev => {
+      const next = typeof valueOrFn === 'function' ? valueOrFn(prev) : valueOrFn
+      return Array.isArray(next) ? next.map(normalizeScene) : next
+    })
+  }, [])
   
   /**
    * 텍스트에서 씬 파싱 (줄바꿈 구분)
