@@ -1107,18 +1107,14 @@ function startMcpHttpServer(port) {
         // POST /api/start-scene-batch — 씬 일괄 생성 시작
         if (req.method === 'POST' && pathname === '/api/start-scene-batch') {
           if (mainWindow) {
-            let bodyStr = ''
-            req.on('data', chunk => { bodyStr += chunk })
-            req.on('end', () => {
-              let styleId = null
-              try {
-                const parsed = JSON.parse(bodyStr)
-                styleId = parsed.styleId || null
-              } catch {}
-              mainWindow.webContents.send('mcp-update', { type: 'start-scene-batch', styleId })
-              res.writeHead(200)
-              res.end(JSON.stringify({ success: true, message: 'Scene batch generation started', styleId }))
-            })
+            let styleId = null
+            try {
+              const parsed = JSON.parse(body)
+              styleId = parsed.styleId || null
+            } catch {}
+            mainWindow.webContents.send('mcp-update', { type: 'start-scene-batch', styleId })
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, message: 'Scene batch generation started', styleId }))
           } else {
             res.writeHead(503)
             res.end(JSON.stringify({ error: 'App not ready' }))
@@ -1129,18 +1125,14 @@ function startMcpHttpServer(port) {
         // POST /api/start-ref-batch — 레퍼런스 일괄 생성 시작
         if (req.method === 'POST' && pathname === '/api/start-ref-batch') {
           if (mainWindow) {
-            let bodyStr = ''
-            req.on('data', chunk => { bodyStr += chunk })
-            req.on('end', () => {
-              let styleId = null
-              try {
-                const parsed = JSON.parse(bodyStr)
-                styleId = parsed.styleId || null
-              } catch {}
-              mainWindow.webContents.send('mcp-update', { type: 'start-ref-batch', styleId })
-              res.writeHead(200)
-              res.end(JSON.stringify({ success: true, message: 'Reference batch generation started', styleId }))
-            })
+            let styleId = null
+            try {
+              const parsed = JSON.parse(body)
+              styleId = parsed.styleId || null
+            } catch {}
+            mainWindow.webContents.send('mcp-update', { type: 'start-ref-batch', styleId })
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, message: 'Reference batch generation started', styleId }))
           } else {
             res.writeHead(503)
             res.end(JSON.stringify({ error: 'App not ready' }))
