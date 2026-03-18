@@ -90,6 +90,10 @@ export function subscribeToAppDoc(userId, onData, onError, appId = APP_ID) {
       }
     },
     (error) => {
+      // QUIC 프로토콜 에러는 자동 재연결되므로 무시
+      if (error?.code === 'unavailable' || error?.message?.includes('QUIC')) {
+        return
+      }
       console.error('[Firestore] App subscription error:', error)
       if (onError) onError(error)
     }
