@@ -6,6 +6,7 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
 import { useI18n } from '../hooks/useI18n'
 import { findSrtSegment } from '../utils/audioTimeline'
+import { parseTimeToSeconds } from '../utils/parsers'
 import AudioFlagPopover from './AudioFlagPopover'
 import Modal from './Modal'
 import './AudioPanel.css'
@@ -30,8 +31,8 @@ function findSceneAtTime(scenes, timecodeMs, srtEntries) {
   // 1차: start_time/end_time 기반
   const timeSec = timecodeMs / 1000
   const byTime = scenes.find(s => {
-    const start = parseFloat(s.start_time)
-    const end = parseFloat(s.end_time)
+    const start = parseTimeToSeconds(s.start_time)
+    const end = parseTimeToSeconds(s.end_time)
     if (isNaN(start) || isNaN(end)) return false
     return timeSec >= start && timeSec < end
   })

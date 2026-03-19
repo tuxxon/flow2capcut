@@ -10,15 +10,20 @@ import {
   parseSRTToScenes,
   parseReferencesCSV,
   mergeReferences,
-  findDuplicateReferenceNames
+  findDuplicateReferenceNames,
+  parseTimeToSeconds
 } from '../utils/parsers'
 import { fileSystemAPI } from './useFileSystem'
 
 // snake_case → camelCase 변환 + 숫자 변환
 function normalizeScene(s, i) {
-  const startTime = parseFloat(s.startTime ?? s.start_time) || 0
+  const rawStart = s.start_time !== undefined ? s.start_time : s.startTime
+  const parsedStart = parseTimeToSeconds(rawStart)
+  const startTime = !isNaN(parsedStart) ? parsedStart : 0
   const duration = parseFloat(s.duration) || 3
-  const endTime = parseFloat(s.endTime ?? s.end_time) || (startTime + duration)
+  const rawEnd = s.end_time !== undefined ? s.end_time : s.endTime
+  const parsedEnd = parseTimeToSeconds(rawEnd)
+  const endTime = !isNaN(parsedEnd) ? parsedEnd : (startTime + duration)
   return {
     ...s,
     id: s.id || `scene_${i + 1}`,

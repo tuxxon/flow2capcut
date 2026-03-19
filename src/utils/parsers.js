@@ -9,6 +9,25 @@ import { DEFAULTS } from '../config/defaults'
 // ============================================================
 
 /**
+ * 시간 문자열을 초 단위 숫자로 변환
+ * 지원 포맷: "HH:MM:SS.mmm", "HH:MM:SS,mmm", "MM:SS.mmm", "MM:SS", 또는 숫자(초)
+ */
+export function parseTimeToSeconds(timeStr) {
+  if (timeStr === undefined || timeStr === null || timeStr === '') return NaN
+  const num = Number(timeStr)
+  if (!isNaN(num)) return num
+  const str = String(timeStr).trim().replace(',', '.')
+  const parts = str.split(':')
+  if (parts.length === 3) {
+    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])
+  }
+  if (parts.length === 2) {
+    return parseFloat(parts[0]) * 60 + parseFloat(parts[1])
+  }
+  return NaN
+}
+
+/**
  * CSV 라인 파싱 (따옴표 처리)
  */
 export function parseCSVLine(line) {
@@ -102,8 +121,10 @@ export function parseCSVToScenes(csvText, defaultDuration = DEFAULTS.scene.durat
     })
     
     const duration = parseFloat(row.duration) || defaultDuration
-    const startTime = row.start_time !== undefined ? parseFloat(row.start_time) : currentTime
-    const endTime = row.end_time !== undefined ? parseFloat(row.end_time) : startTime + duration
+    const parsedStart = parseTimeToSeconds(row.start_time)
+    const startTime = !isNaN(parsedStart) ? parsedStart : currentTime
+    const parsedEnd = parseTimeToSeconds(row.end_time)
+    const endTime = !isNaN(parsedEnd) ? parsedEnd : startTime + duration
     
     currentTime = endTime
     
