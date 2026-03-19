@@ -221,25 +221,30 @@ export default function ResultsTable({
         </div>
       )}
 
+      <div className="results-table-header">
+        <table className="results-table">
+          <thead>
+            <tr>
+              {selectable && (
+                <th className="col-check">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={onToggleAll}
+                    disabled={disabled}
+                  />
+                </th>
+              )}
+              <th className="col-id">#</th>
+              <th className="col-img">{mediaHeader}</th>
+              <th className="col-prompt">{t('results.prompt')}</th>
+              <th className="col-status">{t('results.status')}</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+      <div className="results-table-body">
       <table className="results-table">
-        <thead>
-          <tr>
-            {selectable && (
-              <th className="col-check">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={onToggleAll}
-                  disabled={disabled}
-                />
-              </th>
-            )}
-            <th className="col-id">#</th>
-            <th className="col-img">{mediaHeader}</th>
-            <th className="col-prompt">{t('results.prompt')}</th>
-            <th className="col-status">{t('results.status')}</th>
-          </tr>
-        </thead>
         <tbody>
           {data.map((item, index) => (
             <tr key={item.id} ref={el => { if (el) rowRefs.current[item.id] = el }} className={`status-${item.status} ${selectable && item.selected === false ? 'deselected' : ''}`}>
@@ -304,6 +309,7 @@ export default function ResultsTable({
           ))}
         </tbody>
       </table>
+      </div>
 
       {/* 호버 풍선 프리뷰 */}
       {hoverPreview && createPortal(

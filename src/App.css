@@ -957,10 +957,21 @@ html, body {
 /* Results Table */
 .results-table-container {
   flex: 1;
-  overflow: auto;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
   container-type: inline-size;
   container-name: results-table;
+}
+
+.results-table-header {
+  flex-shrink: 0;
+}
+
+.results-table-body {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .results-empty {
@@ -989,13 +1000,13 @@ html, body {
 
 .results-table th {
   text-align: left;
-  padding: 6px 4px;
-  background: rgba(0,0,0,0.2);
+  padding: 8px 8px;
+  background: #1a1a2e;
   font-weight: 600;
 }
 
 .results-table td {
-  padding: 4px;
+  padding: 6px 8px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
