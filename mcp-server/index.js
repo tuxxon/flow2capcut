@@ -906,8 +906,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // 기존 이미지 매핑 보존: 씬 갯수가 같을 때만 project.json에서 mediaId/imagePath/status 병합
-        if (imageDirPath) {
-          const pjPath = path.join(imageDirPath, 'project.json');
+        let projectDir = imageDirPath;
+        if (!projectDir) {
+          // image_dir 없으면 앱 HTTP API에서 현재 프로젝트 경로 가져오기
+          try {
+            const res = await appFetch(args.port || 3210, 'GET', '/api/current-project');
+            if (res && res.data && res.data.projectDir) projectDir = res.data.projectDir;
+          } catch { /* 앱 미실행 시 무시 */ }
+        }
+        if (projectDir) {
+          const pjPath = path.join(projectDir, 'project.json');
           if (fs.existsSync(pjPath)) {
             try {
               const pj = JSON.parse(fs.readFileSync(pjPath, 'utf-8'));
