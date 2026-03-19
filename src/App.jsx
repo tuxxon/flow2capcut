@@ -83,8 +83,7 @@ function App() {
     }
     if (saved) {
       const parsed = JSON.parse(saved)
-      // File System 권한은 리로드 시 만료되므로 프로젝트명 초기화
-      parsed.projectName = DEFAULTS.project.defaultName
+      // Electron은 로컬 앱이므로 프로젝트명 유지 (리로드 후에도 마지막 프로젝트 복원)
       // 이전 버전 호환: 불필요한 설정 제거
       delete parsed.method
       delete parsed.seed
@@ -752,13 +751,22 @@ function App() {
       const pending = scenes.filter(s => s.status === 'pending').length
       const generating = scenes.filter(s => s.status === 'generating').length
       const error = scenes.filter(s => s.status === 'error').length
+
+      // 레퍼런스 배치 상태
+      const refTotal = references.filter(r => r.type !== 'style').length
+      const refDone = references.filter(r => r.type !== 'style' && r.mediaId).length
+      const refGenerating = generatingRefs.length
+      const refPending = refTotal - refDone - refGenerating
+      const refIsRunning = generatingRefs.length > 0
+
       return {
-        isRunning: isRunning || videoAutomation.isRunning,
+        isRunning: isRunning || videoAutomation.isRunning || refIsRunning,
         isPaused: isPaused || videoAutomation.isPaused,
         progress: isRunning ? progress : videoAutomation.progress,
         total, done, pending, generating, error,
         status: isRunning ? status : videoAutomation.status,
-        statusMessage: isRunning ? statusMessage : videoAutomation.statusMessage
+        statusMessage: isRunning ? statusMessage : videoAutomation.statusMessage,
+        ref: { total: refTotal, done: refDone, generating: refGenerating, pending: refPending, isRunning: refIsRunning }
       }
     }
     return () => {
@@ -767,7 +775,7 @@ function App() {
       delete window.__mcpStopBatch
       delete window.__mcpBatchStatus
     }
-  }, [handleStart, handleStop, handleGenerateAllRefs, scenes, isRunning, isPaused, progress, status, statusMessage, videoAutomation])
+  }, [handleStart, handleStop, handleGenerateAllRefs, scenes, references, generatingRefs, isRunning, isPaused, progress, status, statusMessage, videoAutomation])
 
   // 어느 자동화든 실행 중이면 true
   const anyRunning = isRunning || videoAutomation.isRunning
