@@ -1,0 +1,179 @@
+# R10: 스토리보드 CSV + 검토
+
+이 문서는 story-engine 스킬의 R10(스토리보드 CSV 생성 + 검토) 단계 상세 가이드입니다.
+
+---
+
+### 10단계: 스토리보드 CSV + 검토 (SRT 기반)
+
+> **🔴 이 단계는 9단계(TTS/SFX) 이후에만 실행 가능하다.**
+> scenes.csv의 start_time/end_time은 SRT 타임코드와 timeline JSON에서 산출된다.
+> SRT 없이는 정확한 씬 분리가 불가능하다.
+
+**입력 데이터:**
+- `final_{파트}.srt` — 파트별 자막 (의미 단위, 타임코드 포함)
+- `timeline_{파트}.json` — 세그먼트별 시작/끝 시간
+- 대본 원문 (기/승/전/결 .md 파일)
+
+대본과 SRT/타임라인을 기반으로 **레퍼런스 CSV**와 **씬 CSV**를 생성한다.
+Flow2CapCut MCP의 `get_schema` 도구로 CSV 스키마를 조회하여 정확한 구조를 따른다.
+
+```
+flow2capcut MCP: get_schema({ type: "scenes" })      → 씬 CSV 컬럼 확인
+flow2capcut MCP: get_schema({ type: "references" })   → 레퍼런스 CSV 컬럼 확인
+flow2capcut MCP: get_schema({ type: "prompt-image" }) → 프롬프트 작성 가이드
+```
+
+#### 10-1. 레퍼런스 CSV 작성 (`references.csv`)
+
+대본의 등장인물/장소/스타일을 레퍼런스로 정의한다.
+
+**⚠️ 스타일(style) 레퍼런스 작성 전, 반드시 사용자에게 아트 스타일을 확인한다:**
+- 사용자에게 질문: "이미지 아트 스타일을 어떤 걸로 할까? 예: 한국 애니풍, 수묵화풍, 웹툰풍, 사실적 사극풍, 지브리풍 등"
+- 사용자가 선택한 스타일에 맞춰 `type: style` 레퍼런스의 프롬프트를 작성한다.
+
+| 컬럼 | 설명 |
+|------|------|
+| `name` | 레퍼런스 이름 (인물명, 장소명) |
+| `type` | `character` / `scene` / `style` |
+| `prompt` | 영문 이미지 생성 프롬프트 |
+
+**인물(character) 작성 규칙:**
+- `solo, single person`으로 시작
+- 나이, 성별, 외모, 머리(상투/댕기머리), 의복(저고리+치마/도포 등), 표정 포함
+- 조선시대 용어 병기: `topknot (상투)`, `gat hat (갓)`
+- 마지막에 `historical Korean costume, no modern clothing`
+
+**장소(scene) 작성 규칙:**
+- 시대, 건축양식, 조명, 분위기 포함
+- 시간대 변형: `courtyard`, `courtyard_rain`, `courtyard_night`
+- 마지막에 `no modern elements`
+
+#### 10-2. 씬 CSV 작성 (`{제목}_scenes.csv`)
+
+| 컬럼 | 필수 | 설명 |
+|------|------|------|
+| `prompt` | ✅ | 영문 이미지/비디오 프롬프트 |
+| `prompt_ko` | | 한글 프롬프트 요약 |
+| `subtitle` | | 나레이션/대사 자막 |
+| `characters` | | 등장 인물 (쉼표 구분) |
+| `scene_tag` | | 장소 태그 (references.csv의 scene name과 매칭) |
+| `style_tag` | | 분위기 태그 |
+| `shot_type` | | `scene` / `reaction` / `narration` / `dialogue` |
+| `duration` | | 씬 길이 (초) |
+| `start_time` | | 시작 시간 (초) |
+| `end_time` | | 종료 시간 (초) |
+| `parent_scene` | | 씬 그룹 ID (S001, S002...) |
+
+#### 씬 분리 규칙
+
+**🔴 SRT/타임라인 기반 씬 분리:**
+- `timeline_{파트}.json`의 세그먼트를 기본 단위로 삼는다
+- 한 세그먼트가 15초를 넘으면 내용 기준으로 분할한다
+- 짧은 세그먼트(대사 등)는 같은 장면이면 인접 세그먼트와 병합한다
+- `start_time`/`end_time`은 전체 타임라인 기준 (파트 오프셋 적용)
+- **🔴 타임라인 갭 0초 원칙**: 씬N의 `end_time` = 씬N+1의 `start_time`이어야 한다. 빈 구간이 있으면 CapCut export 시 해당 구간의 이미지와 오디오가 누락된다
+- **🔴 SRT 전체 커버리지 원칙**: SRT의 모든 자막 구간이 반드시 어떤 씬에 포함되어야 한다. SRT 항목을 하나도 빠뜨리지 않는다. SRT 항목 사이의 무음 구간도 인접 씬에 흡수시켜 빈틈을 만들지 않는다
+
+**일반 분리 규칙:**
+- **한 씬은 15초를 넘기지 않는다** (시청자 집중력 유지)
+- 내용적으로 구분되는 단위로 나눈다 (장소, 시간, 행동, 감정 전환 기준)
+- 같은 장소라도 감정/행동이 바뀌면 별도 씬으로 분리
+- 대사 중심 씬과 묘사 중심 씬을 구분
+- 씬당 평균 10초 전후 (28분 영상 기준 약 150~250장면)
+
+**전체 타임라인 파트 오프셋 계산:**
+```
+기: 0초
+승: ffprobe(final_기.mp3) 누적
+전: 기 + 승 누적
+결: 기 + 승 + 전 누적
+```
+
+#### 10-3. 스토리보드 CSV 검토 (subagent, 최대 5회)
+
+생성된 references.csv와 scenes.csv를 subagent가 **Read 도구로 직접 읽고** 검토한다.
+
+**🔴 프로그램 코드 사용 금지**: 반드시 Read 도구로 파일을 직접 읽고 눈으로 대조한다.
+
+```
+┌─ subagent: CSV 파일 + 대본 + SRT 직접 읽기 → 대조 검토
+│     ▼
+│  수정사항 있음? → YES → 수정 반영 → 재검토 (반복)
+│                → NO  → 루프 종료
+│
+│  ※ 최대 5라운드. 초과 시 사용자에게 보고
+└─────────────────────────────────────
+```
+
+**references.csv 검토 기준:**
+1. 대본에 등장하는 모든 인물이 포함되었는가 (누락)
+2. 대본에 나오는 모든 장소가 포함되었는가 (누락)
+3. 영문 프롬프트가 대본의 인물/장소 묘사와 일치하는가
+4. 조선시대 고증이 정확한가 (의복, 건축, 소품)
+5. `solo, single person` / `no modern clothing` / `no modern elements` 등 필수 키워드가 포함되었는가
+
+**scenes.csv 검토 기준:**
+1. 대본의 모든 장면이 빠짐없이 포함되었는가 (누락)
+2. subtitle이 SRT/대본 원문과 일치하는가
+3. start_time/end_time이 타임라인 JSON과 일치하는가
+4. characters가 해당 씬의 실제 등장인물과 일치하는가
+5. scene_tag가 references.csv의 장소 name과 정확히 매칭되는가
+6. 한 씬이 15초를 넘지 않는가
+7. 영문 프롬프트가 해당 장면의 분위기/행동을 정확히 묘사하는가
+8. **🔴 타임라인 갭 검증**: 씬N의 `end_time` = 씬N+1의 `start_time`인가? 0.5초 이상 갭이 있으면 오류
+9. **🔴 타임라인 커버리지 검증**: 첫 씬 `start_time`=0, 마지막 씬 `end_time`=오디오 총 길이(`ffprobe`)와 일치하는가?
+10. **🔴 duration 합산 검증**: 모든 씬의 duration 합산 = 오디오 총 길이인가? (갭이 있으면 합산 < 오디오 길이)
+
+**🔴 씬 CSV 생성 직후 필수 검증 (자동 실행):**
+
+씬 CSV를 만든 직후 아래 검증을 **반드시** 실행한다. 하나라도 실패하면 씬 CSV를 수정한다.
+
+```bash
+# 1. 갭 검증
+python3 -c "
+import csv
+with open('{제목}_scenes.csv') as f:
+    scenes = list(csv.DictReader(f))
+gaps = []
+for i in range(len(scenes)-1):
+    gap = float(scenes[i+1].get('start_time',0)) - float(scenes[i].get('end_time',0))
+    if gap > 0.5:
+        gaps.append((i+1, i+2, round(gap,2)))
+if gaps:
+    print(f'❌ 갭 {len(gaps)}개 발견!')
+    for a,b,g in gaps: print(f'  씬{a}→{b}: {g}초')
+else:
+    print('✅ 갭 없음')
+"
+
+# 2. 커버리지 검증 (첫 씬=0, 마지막 씬=오디오 길이)
+python3 -c "
+import csv, subprocess
+with open('{제목}_scenes.csv') as f:
+    scenes = list(csv.DictReader(f))
+first_start = float(scenes[0]['start_time'])
+last_end = float(scenes[-1]['end_time'])
+audio_dur = float(subprocess.check_output(
+    ['ffprobe','-v','quiet','-show_entries','format=duration','-of','csv=p=0','media/final_full.mp3']
+).strip())
+print(f'첫 씬 시작: {first_start}초 (0이어야 함)')
+print(f'마지막 씬 끝: {last_end:.1f}초')
+print(f'오디오 길이: {audio_dur:.1f}초')
+diff = abs(last_end - audio_dur)
+print(f'✅ 커버리지 OK (차이 {diff:.1f}초)' if diff < 5 else f'❌ 커버리지 불일치! 차이 {diff:.1f}초')
+"
+
+# 3. duration 합산 검증
+python3 -c "
+import csv
+with open('{제목}_scenes.csv') as f:
+    scenes = list(csv.DictReader(f))
+total = sum(float(s.get('end_time',0)) - float(s.get('start_time',0)) for s in scenes)
+print(f'씬 합산: {total:.1f}초 ({total/60:.1f}분)')
+"
+```
+
+**출력 파일**: `references.csv`, `{제목}_scenes.csv`
+
+---

@@ -193,6 +193,11 @@ async function isStepDone(stepId, port = 3210) {
 const STEP_GATES = {
   'app_start_ref_batch': ['R10-3_references_review'],
   'app_start_scene_batch': ['R10-3_scenes_review'],
+  'load_csv_references': ['R10-3_references_review'],
+  'load_csv_scenes': ['R10-3_scenes_review'],
+  'audio_import_narration': ['R09_narration_qa'],
+  'audio_import_voice': ['R09_voice_qa'],
+  'audio_import_sfx': ['R09_sfx_qa'],
 };
 
 function loadProjectJson(projectDir) {
@@ -848,6 +853,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const lowerHeaders = headers.map(h => h.toLowerCase());
         const isReferencesCSV = lowerHeaders.includes('name') && lowerHeaders.includes('type') && lowerHeaders.includes('prompt') && !lowerHeaders.includes('scene_tag');
 
+        // 게이트 체크 (최초 로드는 통과)
+        const port_csv = args.port || 3210;
+        const progress_csv = await readProgress(port_csv);
+        if (Object.keys(progress_csv).length > 0) {
+          const gateKey = isReferencesCSV ? 'load_csv_references' : 'load_csv_scenes';
+          const gateReqs = STEP_GATES[gateKey] || [];
+          for (const req of gateReqs) {
+            if (!(await isStepDone(req, port_csv))) {
+              return {
+                content: [{ type: 'text', text: `❌ 게이트 차단: "${req}" 단계가 완료되지 않았습니다. 검토를 먼저 완료하고 mark_step_done으로 기록하세요.\n(최초 로드 시에는 게이트가 적용되지 않습니다)` }],
+              };
+            }
+          }
+        }
+
         if (isReferencesCSV) {
           // references CSV → 앱의 레퍼런스로 전달
           const TYPE_TO_CATEGORY = { character: 'MEDIA_CATEGORY_SUBJECT', scene: 'MEDIA_CATEGORY_SCENE', background: 'MEDIA_CATEGORY_SCENE', style: 'MEDIA_CATEGORY_STYLE' };
@@ -1407,22 +1427,62 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const emoji = result === 'pass' ? '✅' : '⚠️';
         let msg = `${emoji} ${step}: ${result} (round ${round || 1}, issues: ${issues_found || 0}, by ${reviewer})`;
 
-        // pass일 때 다음 단계 가이드 자동 반환
+        // pass일 때 다음 단계 가이드 자동 반환 + 참조 문서 자동 로드
         if (result === 'pass') {
+          const skillDocsDir = path.join(os.homedir(), '.claude', 'skills', 'story-engine', 'docs');
+          const metaPromptsDir = path.join(os.homedir(), '.claude', 'skills', 'story-engine', 'meta-prompts', 'yadam');
+
+          // 참조 문서 읽기 헬퍼 (없으면 경로 안내)
+          const loadDoc = (filePath) => {
+            try { return fs.readFileSync(filePath, 'utf-8'); }
+            catch { return `⚠️ 문서를 찾을 수 없음: ${filePath}\n🔴 반드시 Read 도구로 직접 읽어라.`; }
+          };
+
           const NEXT_STEP_GUIDE = {
-            'R10-3_references_review': `\n\n📋 다음 단계: 레퍼런스 이미지 생성 + QA (11-2a/b)\n` +
-              `1. app_start_ref_batch({ styleId }) → 레퍼런스 일괄 생성\n` +
-              `2. 생성 완료 후 레퍼런스 이미지 QA:\n` +
-              `   - Read 도구로 references/ 폴더의 이미지를 직접 확인\n` +
-              `   - 캐릭터: 나이, 성별, 복장, 인상이 대본과 일치하는지\n` +
-              `   - 장소: 시대, 분위기가 대본과 일치하는지\n` +
-              `   🔴 수정 시 잘못된 카드만 개별 삭제/재생성. 절대 전체 삭제 금지`,
-            'R10-3_scenes_review': `\n\n📋 다음 단계: 씬 이미지 일괄 생성 + QA (11-2a/b)\n` +
-              `1. app_start_scene_batch({ styleId }) → 씬 일괄 생성\n` +
-              `2. 생성 완료 후 씬 이미지 전수검사 (최대 5라운드):\n` +
-              `   - Read 도구로 images/ 폴더의 이미지를 10장씩 확인\n` +
-              `   - 체크: 이미지 누락, 스타일 불일치, 캐릭터 복장, 인물 수, 감정, 배경, 소품, 시대\n` +
-              `   - 문제 발견 시 프롬프트 수정 → 개별 재생성`,
+            // R1→R2: 같은 문서 그룹, 간단 안내
+            'R1_diagnosis': `\n\n📋 다음: R2 팩트체크\n역사적 사실 검증 + 시대고증 확인.`,
+            'R2_factcheck': `\n\n📋 다음: R3 시놉시스\n🔴 반드시 읽어라:\n` +
+              `- meta-prompts/yadam/야담_시놉시스_작성_지침.md\n\n` +
+              loadDoc(path.join(metaPromptsDir, '야담_시놉시스_작성_지침.md')),
+            // R3→R4: 문서 그룹 전환 (R01-03 → R04-07)
+            'R3_synopsis': `\n\n📋 다음: R4 프리플라이트\n🔴 참조 문서 자동 로드:\n\n` +
+              loadDoc(path.join(skillDocsDir, 'R04-07-writing.md')) + `\n\n` +
+              `🔴 프리플라이트 상세:\n` +
+              loadDoc(path.join(metaPromptsDir, '야담_프리플라이트.md')),
+            // R4→R5: 대본 작성 시작
+            'R4_preflight': `\n\n📋 다음: R5 대본 작성 (기→승→전→결→훅 순서)\n🔴 반드시 읽어라:\n\n` +
+              `--- 야담_시나리오_작성_지침 ---\n` +
+              loadDoc(path.join(metaPromptsDir, '야담_시나리오_작성_지침.md')) + `\n\n` +
+              `--- 야담_서술기법_가이드 ---\n` +
+              loadDoc(path.join(metaPromptsDir, '야담_서술기법_가이드.md')) + `\n\n` +
+              `--- 야담_서스펜스_기법 ---\n` +
+              loadDoc(path.join(metaPromptsDir, '야담_서스펜스_기법.md')),
+            // R5→R6: 검토
+            'R5_writing': `\n\n📋 다음: R6 검토 후 수정\nsubagent 반복 검토, 최대 5라운드. 수정사항 없을 때까지.`,
+            // R6→R7: 대본 확정
+            'R6_review': `\n\n📋 다음: R7 대본 확정\n🛑 사용자 확인 필수. 대본을 확정할지 물어봐라.`,
+            // R7→R8: 문서 그룹 전환 (R04-07 → R08-09)
+            'R7_finalize': `\n\n📋 다음: R8 프로덕션 추출\n🔴 참조 문서 자동 로드:\n\n` +
+              loadDoc(path.join(skillDocsDir, 'R08-09-production.md')),
+            // R8→R8.5: 추출 검토
+            'R8_production': `\n\n📋 다음: R8.5 프로덕션 추출 검토\nsubagent가 대본 원문과 추출 파일을 대조. 최대 5라운드.`,
+            // R8.5→R9: TTS/SFX
+            'R8.5_review': `\n\n📋 다음: R9 TTS/SFX 생성\nElevenLabs mp3+SRT 동시 생성. 자막 수동 분리 필수.`,
+            // R9→R10: 문서 그룹 전환 (R08-09 → R10)
+            'R9_tts_sfx': `\n\n📋 다음: R10 스토리보드 CSV\n🔴 참조 문서 자동 로드:\n\n` +
+              loadDoc(path.join(skillDocsDir, 'R10-storyboard.md')),
+            // R10-3→R11: 문서 그룹 전환 (R10 → R11-12)
+            'R10-3_references_review': `\n\n📋 다음: 레퍼런스 이미지 생성 + QA\n` +
+              `1. app_start_ref_batch({ styleId }) → 일괄 생성\n` +
+              `2. 생성 완료 후 QA: Read 도구로 이미지 직접 확인\n` +
+              `   🔴 수정 시 잘못된 카드만 개별 삭제/재생성. 절대 전체 삭제 금지\n\n` +
+              `🔴 참조 문서 자동 로드:\n\n` +
+              loadDoc(path.join(skillDocsDir, 'R11-12-image-upload.md')),
+            'R10-3_scenes_review': `\n\n📋 다음: 씬 이미지 일괄 생성 + QA\n` +
+              `1. app_start_scene_batch({ styleId }) → 일괄 생성\n` +
+              `2. 전수검사 (최대 5라운드): Read 도구로 10장씩 확인\n` +
+              `   체크: 누락, 스타일, 복장, 인물 수, 감정, 배경, 소품, 시대\n` +
+              `   문제 시 프롬프트 수정 → 개별 재생성`,
           };
           const guide = NEXT_STEP_GUIDE[step];
           if (guide) msg += guide;
