@@ -134,12 +134,25 @@ async function prepareCloudRequest(project, options = {}) {
 
     const imageFilename = getFilename(imagePath, sceneId, 'image');
 
-    // image_size가 없으면 base64에서 추출 시도
+    // image_size가 없으면 실제 이미지 파일에서 크기 추출
+    if (!imageSize && imagePath) {
+      try {
+        imageSize = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => resolve(null);
+          img.src = imagePath.startsWith('/') ? `file://${imagePath}` : imagePath;
+        });
+        if (imageSize) {
+          console.log(`[CapCut Cloud] Image size from file: ${imageSize.width}x${imageSize.height} (${sceneId})`);
+        }
+      } catch (e) { /* ignore */ }
+    }
+    // fallback: base64에서 추출
     if (!imageSize && fallback) {
-      console.log(`[CapCut Cloud] Extracting image size for ${sceneId} from base64...`);
       imageSize = await getImageSizeFromBase64(fallback);
       if (imageSize) {
-        console.log(`[CapCut Cloud] Extracted size: ${imageSize.width}x${imageSize.height}`);
+        console.log(`[CapCut Cloud] Extracted size from base64: ${imageSize.width}x${imageSize.height}`);
       }
     }
     const imgWidth = imageSize?.width || 1024;
