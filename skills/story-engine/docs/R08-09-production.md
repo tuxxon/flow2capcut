@@ -2,6 +2,14 @@
 
 이 문서는 story-engine 스킬의 R8(프로덕션 추출+검토), R9(TTS/SFX 생성) 단계 상세 가이드입니다.
 
+**참고 스크립트** (`~/workspace/Flow2CapCut/scripts/`):
+
+| 스크립트 | 용도 |
+|----------|------|
+| `generate_tts_elevenlabs.py` | ElevenLabs TTS (나레이션+대사, with-timestamps → mp3+SRT) |
+| `generate_tts_typecast.py` | Typecast TTS (인물별 대사, 파일명에 타임코드 자동 부여) |
+| `generate_sfx.py` | ElevenLabs Sound Generation (SFX 음향효과 생성) |
+
 ---
 
 ### 8단계: 프로덕션 추출 + 검토
@@ -196,5 +204,31 @@ ffmpeg -y -f concat -safe 0 -i merge_all.txt -c copy media/final_full.mp3
 - `media/final_full.mp3` — 전체 오디오 (기+승+전+결 연속)
 - `media/final_full.srt` — 전체 자막 (오프셋 적용된 타임코드)
 - `media/sfx/*.mp3` — SFX (전체 타임라인 기준 MMSS 타임코드)
+
+#### 9-4. SFX 타임코드 검증 (오디오 임포트 전 필수)
+
+🔴 **오디오 임포트(11-2c) 전에 반드시 실행한다. 예외 없음.**
+
+**검증 항목:**
+1. **씬 매칭 검증** — 각 SFX 파일의 타임코드가 08_sfx_목록.md의 "위치"에 해당하는 씬의 실제 start_time과 일치하는지 확인
+2. **겹침 검증** — 같은 타임코드에 3개 이상 몰려있으면 ❌ 실패 (CapCut에서 트랙 폭발)
+3. **범위 검증** — 타임코드가 전체 오디오 길이를 초과하지 않는지 확인
+4. **파트별 오프셋 검증** — `sfx/` 원본의 파트별 타임코드 + 파트 오프셋 = `media/sfx/`의 전체 타임코드
+
+**검증 스크립트:**
+```python
+# scenes.csv에서 씬별 start_time 읽기
+# 08_sfx_목록.md의 위치 → parent_scene 매핑
+# media/sfx/ 파일명의 타임코드와 비교
+# 불일치 시 fix_sfx_timecodes.py로 재매핑
+```
+
+**검증 실패 시:**
+- `fix_sfx_timecodes.py` 실행하여 타임코드 재매핑
+- 재매핑 후 다시 검증 → pass까지 반복
+
+**mark_step_done:**
+- step: `R09_sfx_timecode_qa`
+- 검증 통과 후 기록 → 오디오 임포트 게이트 해제
 
 ---

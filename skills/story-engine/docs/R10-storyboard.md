@@ -2,6 +2,13 @@
 
 이 문서는 story-engine 스킬의 R10(스토리보드 CSV 생성 + 검토) 단계 상세 가이드입니다.
 
+**참고 스크립트** (`~/workspace/Flow2CapCut/scripts/`):
+
+| 스크립트 | 용도 |
+|----------|------|
+| `generate_scenes_csv.py` | SRT 파싱 → 씬 경계 정의 → scenes.csv 생성 (15초 룰 자동 검증) |
+| `merge_scenes.py` | 파트별 scenes CSV를 하나로 병합 |
+
 ---
 
 ### 10단계: 스토리보드 CSV + 검토 (SRT 기반)
