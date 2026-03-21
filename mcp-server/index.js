@@ -765,7 +765,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           folder_path: { type: 'string', description: '오디오 패키지 폴더 절대 경로' },
-          relative_path: { type: 'string', description: '파일 상대 경로 (예: voice_samples/sfx/01_주판/click_01.mp3)' },
+          relative_path: { type: 'string', description: '파일 상대 경로 (예: media/sfx/01_주판/click_01.mp3)' },
           action: { type: 'string', enum: ['flag', 'unflag'], description: 'flag=마크, unflag=해제' },
           reason: { type: 'string', description: '부적합 사유 (flag 시 필요)' },
         },

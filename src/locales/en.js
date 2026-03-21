@@ -382,7 +382,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     wrongTypeText: 'This file is plain text.\nImport as prompts instead?',
     audioTitle: 'Audio Package',
     audioDesc: 'Voice + SFX for CapCut multitrack',
-    audioHint: 'media/ + voice_samples/ + sfx/',
+    audioHint: 'media/ + media/voices/ + media/sfx/',
   },
 
   // Audio Import

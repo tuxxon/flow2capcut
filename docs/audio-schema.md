@@ -5,10 +5,8 @@
 ## 디렉토리 구조
 
 ```
-voice_samples/
-├── generate_tts.py          ← TTS 생성 스크립트
-├── generate_sfx.py          ← SFX 생성 스크립트
-├── typecast_voice_catalog.md ← 음성 카탈로그
+media/
+├── voices/                  ← 인물별 대사 음성 (캐릭터별 서브폴더)
 ├── sfx/                     ← 음향효과
 │   ├── 01_주판/
 │   │   ├── abacus_beads_01.mp3
@@ -112,7 +110,7 @@ abacus_beads_01_0134.mp3       ← 01:34 씬용
 
 ```json
 {
-  "voice_samples/sfx/02_환경음_바람/wind_howl_01.mp3": {
+  "media/sfx/02_환경음_바람/wind_howl_01.mp3": {
     "status": "flagged",
     "reason": "타임코드 없음",
     "flaggedAt": "2026-03-16T05:44:55.228Z"

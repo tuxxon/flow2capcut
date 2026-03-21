@@ -840,8 +840,8 @@ export function registerFilesystemIPC(ipcMain) {
   // 폴더 선택 다이얼로그 → 하위 구조 스캔:
   //   media/  → 원본 영상/오디오 + SRT
   //   media/sfx/ → SFX 파일 (플랫 구조, 파일명 타임코드)
-  //   voice_samples/ → 인물별 음성 (타임코드 파일명)
-  //   voice_samples/sfx/ → 음향효과 파일 (카테고리별 하위 폴더)
+  //   media/voices/ → 인물별 음성 (타임코드 파일명, 캐릭터별 서브폴더)
+  //   media/sfx/ → 음향효과 파일 (카테고리별 하위 폴더 + 플랫 구조)
   //   음향효과_추출.md → SFX 타임코드 매핑
   // ----------------------------------------------------------
   ipcMain.handle('fs:scan-audio-package', async () => {
@@ -913,8 +913,8 @@ export function registerFilesystemIPC(ipcMain) {
         srtContent = await fs.readFile(media.srt.path, 'utf-8')
       }
 
-      // 2. voice_samples/ 스캔
-      const voiceDir = path.join(folderPath, 'voice_samples')
+      // 2. media/voices/ 스캔 (캐릭터별 서브폴더)
+      const voiceDir = path.join(folderPath, 'media', 'voices')
       const voices = []
       const sfxCategories = []
 
@@ -926,89 +926,90 @@ export function registerFilesystemIPC(ipcMain) {
 
           const subDirPath = path.join(voiceDir, entry.name)
 
-          if (entry.name === 'sfx') {
-            // SFX 하위 폴더 스캔
-            const sfxEntries = await fs.readdir(subDirPath, { withFileTypes: true })
-            for (const sfxEntry of sfxEntries) {
-              if (!sfxEntry.isDirectory()) continue
-              const sfxCatPath = path.join(subDirPath, sfxEntry.name)
-              const sfxFiles = await fs.readdir(sfxCatPath)
-              const audioFiles = sfxFiles
-                .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
-                .map(f => {
-                  const name = f.replace(/\.\w+$/, '')
-                  const parts = name.split('_')
-                  const timecodeStr = parts[parts.length - 1]
-                  let timecodeMs = null
+          // 인물 음성 폴더
+          const voiceFiles = await fs.readdir(subDirPath)
+          const candidates = voiceFiles
+            .filter(f => /\.(wav|mp3|ogg|m4a)$/i.test(f))
+            .map(f => {
+              const name = f.replace(/\.\w+$/, '')
+              const parts = name.split('_')
+              const timecodeStr = parts[parts.length - 1]
+              const seqStr = parts.length >= 3 ? parts[parts.length - 2] : null
+              let timecodeMs = null
 
-                  if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
-                    const mm = parseInt(timecodeStr.slice(0, 2), 10)
-                    const ss = parseInt(timecodeStr.slice(2, 4), 10)
-                    timecodeMs = (mm * 60 + ss) * 1000
-                  } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
-                    const hh = parseInt(timecodeStr.slice(0, 2), 10)
-                    const mm = parseInt(timecodeStr.slice(2, 4), 10)
-                    const ss = parseInt(timecodeStr.slice(4, 6), 10)
-                    timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
-                  }
-
-                  return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
-                })
-
-              if (audioFiles.length > 0) {
-                sfxCategories.push({
-                  category: sfxEntry.name,
-                  files: audioFiles
-                })
+              if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                timecodeMs = (mm * 60 + ss) * 1000
+              } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
               }
-            }
-          } else {
-            // 인물 음성 폴더
-            const voiceFiles = await fs.readdir(subDirPath)
-            const candidates = voiceFiles
-              .filter(f => /\.(wav|mp3|ogg|m4a)$/i.test(f))
-              .map(f => {
-                const name = f.replace(/\.\w+$/, '')
-                const parts = name.split('_')
-                const timecodeStr = parts[parts.length - 1]
-                const seqStr = parts.length >= 3 ? parts[parts.length - 2] : null
-                let timecodeMs = null
 
-                if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
-                  const mm = parseInt(timecodeStr.slice(0, 2), 10)
-                  const ss = parseInt(timecodeStr.slice(2, 4), 10)
-                  timecodeMs = (mm * 60 + ss) * 1000
-                } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
-                  const hh = parseInt(timecodeStr.slice(0, 2), 10)
-                  const mm = parseInt(timecodeStr.slice(2, 4), 10)
-                  const ss = parseInt(timecodeStr.slice(4, 6), 10)
-                  timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
-                }
+              return {
+                path: path.join(subDirPath, f),
+                filename: f,
+                seq: seqStr ? parseInt(seqStr, 10) : null,
+                timecodeMs
+              }
+            })
+            .filter(f => f.timecodeMs !== null)
+            .sort((a, b) => a.timecodeMs - b.timecodeMs)
 
-                return {
-                  path: path.join(subDirPath, f),
-                  filename: f,
-                  seq: seqStr ? parseInt(seqStr, 10) : null,
-                  timecodeMs
-                }
-              })
-              .filter(f => f.timecodeMs !== null)
-              .sort((a, b) => a.timecodeMs - b.timecodeMs)
+          // 각 파일의 실제 재생 시간 읽기 (병렬)
+          const audioFiles = await Promise.all(
+            candidates.map(async (f) => {
+              const durationMs = await getAudioDurationMs(f.path)
+              return { ...f, durationMs }
+            })
+          )
 
-            // 각 파일의 실제 재생 시간 읽기 (병렬)
-            const audioFiles = await Promise.all(
-              candidates.map(async (f) => {
-                const durationMs = await getAudioDurationMs(f.path)
-                return { ...f, durationMs }
-              })
-            )
+          if (audioFiles.length > 0) {
+            voices.push({
+              character: entry.name,
+              files: audioFiles
+            })
+          }
+        }
+      }
 
-            if (audioFiles.length > 0) {
-              voices.push({
-                character: entry.name,
-                files: audioFiles
-              })
-            }
+      // 2-b. media/sfx/ 카테고리별 하위 폴더 스캔
+      const sfxCatDir = path.join(folderPath, 'media', 'sfx')
+      if (await pathExists(sfxCatDir)) {
+        const sfxEntries = await fs.readdir(sfxCatDir, { withFileTypes: true })
+        for (const sfxEntry of sfxEntries) {
+          if (!sfxEntry.isDirectory()) continue
+          const sfxCatPath = path.join(sfxCatDir, sfxEntry.name)
+          const sfxFiles = await fs.readdir(sfxCatPath)
+          const audioFiles = sfxFiles
+            .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
+            .map(f => {
+              const name = f.replace(/\.\w+$/, '')
+              const parts = name.split('_')
+              const timecodeStr = parts[parts.length - 1]
+              let timecodeMs = null
+
+              if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                timecodeMs = (mm * 60 + ss) * 1000
+              } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
+              }
+
+              return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
+            })
+
+          if (audioFiles.length > 0) {
+            sfxCategories.push({
+              category: sfxEntry.name,
+              files: audioFiles
+            })
           }
         }
       }
@@ -1118,8 +1119,8 @@ export function registerFilesystemIPC(ipcMain) {
         srtContent = await fs.readFile(media.srt.path, 'utf-8')
       }
 
-      // 2. voice_samples/ 스캔
-      const voiceDir = path.join(folderPath, 'voice_samples')
+      // 2. media/voices/ 스캔 (캐릭터별 서브폴더)
+      const voiceDir = path.join(folderPath, 'media', 'voices')
       const voices = []
       const sfxCategories = []
 
@@ -1130,75 +1131,77 @@ export function registerFilesystemIPC(ipcMain) {
           if (!entry.isDirectory()) continue
           const subDirPath = path.join(voiceDir, entry.name)
 
-          if (entry.name === 'sfx') {
-            const sfxEntries = await fs.readdir(subDirPath, { withFileTypes: true })
-            for (const sfxEntry of sfxEntries) {
-              if (!sfxEntry.isDirectory()) continue
-              const sfxCatPath = path.join(subDirPath, sfxEntry.name)
-              const sfxFiles = await fs.readdir(sfxCatPath)
-              const audioFiles = sfxFiles
-                .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
-                .map(f => {
-                  const name = f.replace(/\.\w+$/, '')
-                  const parts = name.split('_')
-                  const timecodeStr = parts[parts.length - 1]
-                  let timecodeMs = null
+          const voiceFiles = await fs.readdir(subDirPath)
+          const candidates = voiceFiles
+            .filter(f => /\.(wav|mp3|ogg|m4a)$/i.test(f))
+            .map(f => {
+              const name = f.replace(/\.\w+$/, '')
+              const parts = name.split('_')
+              const timecodeStr = parts[parts.length - 1]
+              const seqStr = parts.length >= 3 ? parts[parts.length - 2] : null
+              let timecodeMs = null
 
-                  if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
-                    const mm = parseInt(timecodeStr.slice(0, 2), 10)
-                    const ss = parseInt(timecodeStr.slice(2, 4), 10)
-                    timecodeMs = (mm * 60 + ss) * 1000
-                  } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
-                    const hh = parseInt(timecodeStr.slice(0, 2), 10)
-                    const mm = parseInt(timecodeStr.slice(2, 4), 10)
-                    const ss = parseInt(timecodeStr.slice(4, 6), 10)
-                    timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
-                  }
-
-                  return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
-                })
-
-              if (audioFiles.length > 0) {
-                sfxCategories.push({ category: sfxEntry.name, files: audioFiles })
+              if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                timecodeMs = (mm * 60 + ss) * 1000
+              } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
               }
-            }
-          } else {
-            const voiceFiles = await fs.readdir(subDirPath)
-            const candidates = voiceFiles
-              .filter(f => /\.(wav|mp3|ogg|m4a)$/i.test(f))
-              .map(f => {
-                const name = f.replace(/\.\w+$/, '')
-                const parts = name.split('_')
-                const timecodeStr = parts[parts.length - 1]
-                const seqStr = parts.length >= 3 ? parts[parts.length - 2] : null
-                let timecodeMs = null
 
-                if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
-                  const mm = parseInt(timecodeStr.slice(0, 2), 10)
-                  const ss = parseInt(timecodeStr.slice(2, 4), 10)
-                  timecodeMs = (mm * 60 + ss) * 1000
-                } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
-                  const hh = parseInt(timecodeStr.slice(0, 2), 10)
-                  const mm = parseInt(timecodeStr.slice(2, 4), 10)
-                  const ss = parseInt(timecodeStr.slice(4, 6), 10)
-                  timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
-                }
+              return { path: path.join(subDirPath, f), filename: f, seq: seqStr ? parseInt(seqStr, 10) : null, timecodeMs }
+            })
+            .filter(f => f.timecodeMs !== null)
+            .sort((a, b) => a.timecodeMs - b.timecodeMs)
 
-                return { path: path.join(subDirPath, f), filename: f, seq: seqStr ? parseInt(seqStr, 10) : null, timecodeMs }
-              })
-              .filter(f => f.timecodeMs !== null)
-              .sort((a, b) => a.timecodeMs - b.timecodeMs)
+          const audioFiles = await Promise.all(
+            candidates.map(async (f) => {
+              const durationMs = await getAudioDurationMs(f.path)
+              return { ...f, durationMs }
+            })
+          )
 
-            const audioFiles = await Promise.all(
-              candidates.map(async (f) => {
-                const durationMs = await getAudioDurationMs(f.path)
-                return { ...f, durationMs }
-              })
-            )
+          if (audioFiles.length > 0) {
+            voices.push({ character: entry.name, files: audioFiles })
+          }
+        }
+      }
 
-            if (audioFiles.length > 0) {
-              voices.push({ character: entry.name, files: audioFiles })
-            }
+      // 2-b. media/sfx/ 카테고리별 하위 폴더 스캔
+      const sfxCatDir = path.join(folderPath, 'media', 'sfx')
+      if (await pathExists(sfxCatDir)) {
+        const sfxEntries = await fs.readdir(sfxCatDir, { withFileTypes: true })
+        for (const sfxEntry of sfxEntries) {
+          if (!sfxEntry.isDirectory()) continue
+          const sfxCatPath = path.join(sfxCatDir, sfxEntry.name)
+          const sfxFiles = await fs.readdir(sfxCatPath)
+          const audioFiles = sfxFiles
+            .filter(f => /\.(mp3|wav|m4a)$/i.test(f))
+            .map(f => {
+              const name = f.replace(/\.\w+$/, '')
+              const parts = name.split('_')
+              const timecodeStr = parts[parts.length - 1]
+              let timecodeMs = null
+
+              if (timecodeStr && /^\d{4}$/.test(timecodeStr)) {
+                const mm = parseInt(timecodeStr.slice(0, 2), 10)
+                const ss = parseInt(timecodeStr.slice(2, 4), 10)
+                timecodeMs = (mm * 60 + ss) * 1000
+              } else if (timecodeStr && /^\d{6}$/.test(timecodeStr)) {
+                const hh = parseInt(timecodeStr.slice(0, 2), 10)
+                const mm = parseInt(timecodeStr.slice(2, 4), 10)
+                const ss = parseInt(timecodeStr.slice(4, 6), 10)
+                timecodeMs = (hh * 3600 + mm * 60 + ss) * 1000
+              }
+
+              return { path: path.join(sfxCatPath, f), filename: f, timecodeMs }
+            })
+
+          if (audioFiles.length > 0) {
+            sfxCategories.push({ category: sfxEntry.name, files: audioFiles })
           }
         }
       }

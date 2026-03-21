@@ -326,9 +326,9 @@ async function prepareCloudRequest(project, options = {}) {
         ? audioPackage.media.video.durationMs / 1000
         : null,
       scenes: cloudScenes,
-      videoOverlays: cloudVideoOverlays.length > 0 ? cloudVideoOverlays : undefined,
+      videoOverlays: cloudVideoOverlays.length > 0 ? cloudVideoOverlays : null,
       sfxItems: cloudSfxItems,
-      audioTracks: cloudAudioTracks.length > 0 ? cloudAudioTracks : undefined,
+      audioTracks: cloudAudioTracks.length > 0 ? cloudAudioTracks : null,
       mediaPathBase
     },
     mediaFiles,
@@ -347,9 +347,14 @@ async function callGenerateCapcutJson(requestData) {
   const FUNCTION_SUFFIX = import.meta.env.VITE_FUNCTION_ENV === 'prod' ? '_prod' : '_test';
   const generateCapcutJson = httpsCallable(functions, `generateCapcutJson${FUNCTION_SUFFIX}`);
 
-  console.log(`[CapCut Cloud] Calling generateCapcutJson${FUNCTION_SUFFIX} with`, requestData.scenes.length, 'scenes');
+  // undefined/NaN 값 제거 (Firebase httpsCallable은 JSON-safe 값만 허용)
+  const sanitized = JSON.parse(JSON.stringify(requestData, (key, value) =>
+    value === undefined || (typeof value === 'number' && !isFinite(value)) ? null : value
+  ));
 
-  const result = await generateCapcutJson(requestData);
+  console.log(`[CapCut Cloud] Calling generateCapcutJson${FUNCTION_SUFFIX} with`, sanitized.scenes.length, 'scenes');
+
+  const result = await generateCapcutJson(sanitized);
 
   console.log('[CapCut Cloud] Received response:', {
     totalDuration: result.data.totalDuration,

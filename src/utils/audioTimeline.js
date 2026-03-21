@@ -1,7 +1,7 @@
 /**
  * Audio Timeline Utilities
  *
- * 오디오 패키지(voice_samples, sfx)의 타임코드 파싱, SRT 매칭,
+ * 오디오 패키지(media/voices, media/sfx)의 타임코드 파싱, SRT 매칭,
  * 원본 오디오 컷 구간 계산, 음성 중앙 정렬 등을 처리.
  */
 

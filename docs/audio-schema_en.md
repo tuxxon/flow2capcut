@@ -5,10 +5,8 @@ Structure for per-character dialogue audio (TTS) and sound effect (SFX) files.
 ## Directory Structure
 
 ```
-voice_samples/
-├── generate_tts.py          <- TTS generation script
-├── generate_sfx.py          <- SFX generation script
-├── typecast_voice_catalog.md <- Voice catalog
+media/
+├── voices/                  <- Per-character dialogue audio (subfolders per character)
 ├── sfx/                     <- Sound effects
 │   ├── 01_주판/
 │   │   ├── abacus_beads_01.mp3
@@ -112,7 +110,7 @@ JSON file that tracks unsuitable audio files.
 
 ```json
 {
-  "voice_samples/sfx/02_환경음_바람/wind_howl_01.mp3": {
+  "media/sfx/02_환경음_바람/wind_howl_01.mp3": {
     "status": "flagged",
     "reason": "타임코드 없음",
     "flaggedAt": "2026-03-16T05:44:55.228Z"

@@ -281,8 +281,8 @@ export function useAudioImport(t) {
               const parts = name.split('_')
               parts.pop()
               const baseName = parts.join('_')
-              // relative dir: voice_samples/sfx/{category}
-              basesWithTimecode.add(`voice_samples/sfx/${cat.category}/${baseName}`)
+              // relative dir: media/sfx/{category}
+              basesWithTimecode.add(`media/sfx/${cat.category}/${baseName}`)
             }
           }
         }

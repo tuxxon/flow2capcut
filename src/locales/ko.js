@@ -382,7 +382,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     wrongTypeText: '이 파일은 일반 텍스트입니다.\n프롬프트로 import할까요?',
     audioTitle: '오디오 패키지',
     audioDesc: '인물 음성 + 음향효과 (CapCut 멀티트랙)',
-    audioHint: 'media/ + voice_samples/ + sfx/',
+    audioHint: 'media/ + media/voices/ + media/sfx/',
   },
 
   // 오디오 Import

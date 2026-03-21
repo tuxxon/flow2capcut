@@ -313,17 +313,20 @@ export function useReferenceGeneration({ settings, references, setReferences, fl
     // 파일 저장 (폴더 모드)
     let filePath = null
     let savedDataUrl = displayUrl
+    console.log('[AsyncRef] Save check:', { saveMode: settings.saveMode, projectName: settings.projectName })
     if (settings.saveMode === 'folder') {
       const projectName = settings.projectName || generateProjectName()
       const refName = ref.name || `ref_${index + 1}`
       const metadata = { mediaId, caption, category: ref.category }
       const permission = await fileSystemAPI.ensurePermission()
+      console.log('[AsyncRef] Permission:', permission, 'projectName:', projectName, 'refName:', refName)
 
       let saveResult = { success: false }
       if (permission.hasPermission) {
         saveResult = await fileSystemAPI.saveReference(projectName, refName, imageData, 'flow', metadata)
           .catch(e => ({ success: false, error: e.message }))
       }
+      console.log('[AsyncRef] saveResult:', saveResult.success, saveResult.error || '')
 
       if (saveResult.success) {
         filePath = saveResult.path

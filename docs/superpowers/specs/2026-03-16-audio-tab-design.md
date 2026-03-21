@@ -37,7 +37,7 @@ AudioResultModal 레이아웃 재활용:
 4. 추후 앱 내 "AI 대체 제안" 버튼 자동화 (2차)
 
 ### 데이터 저장
-- `voice_samples/.audio_review.json` 파일에 저장
+- `media/.audio_review.json` 파일에 저장
 - 구조:
 ```json
 {
