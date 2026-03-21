@@ -858,8 +858,9 @@ export function registerFilesystemIPC(ipcMain) {
 
       const folderPath = result.filePaths[0]
 
-      // 1. media/ 스캔
-      const mediaDir = path.join(folderPath, 'media')
+      // 1. media/ 스캔 — 상위 디렉토리 또는 media/ 직접 지정 둘 다 지원
+      const _md = path.join(folderPath, 'media')
+      const mediaDir = await pathExists(_md) ? _md : folderPath
       let media = { video: null, srt: null }
       if (await pathExists(mediaDir)) {
         const files = await fs.readdir(mediaDir)
@@ -913,8 +914,10 @@ export function registerFilesystemIPC(ipcMain) {
         srtContent = await fs.readFile(media.srt.path, 'utf-8')
       }
 
-      // 2. media/voices/ 스캔 (캐릭터별 서브폴더)
-      const voiceDir = path.join(folderPath, 'media', 'voices')
+      // 2. media/voices/ 스캔 — 상위 디렉토리(ep02/) 또는 media/ 직접 지정 둘 다 지원
+      const _vd1 = path.join(folderPath, 'media', 'voices')
+      const _vd2 = path.join(folderPath, 'voices')
+      const voiceDir = await pathExists(_vd1) ? _vd1 : _vd2
       const voices = []
       const sfxCategories = []
 
@@ -976,7 +979,9 @@ export function registerFilesystemIPC(ipcMain) {
       }
 
       // 2-b. media/sfx/ 카테고리별 하위 폴더 스캔
-      const sfxCatDir = path.join(folderPath, 'media', 'sfx')
+      const _sd1 = path.join(folderPath, 'media', 'sfx')
+      const _sd2 = path.join(folderPath, 'sfx')
+      const sfxCatDir = await pathExists(_sd1) ? _sd1 : _sd2
       if (await pathExists(sfxCatDir)) {
         const sfxEntries = await fs.readdir(sfxCatDir, { withFileTypes: true })
         for (const sfxEntry of sfxEntries) {
@@ -1065,8 +1070,9 @@ export function registerFilesystemIPC(ipcMain) {
         return { success: false, error: 'Invalid folder path' }
       }
 
-      // 1. media/ 스캔
-      const mediaDir = path.join(folderPath, 'media')
+      // 1. media/ 스캔 — 상위 디렉토리 또는 media/ 직접 지정 둘 다 지원
+      const _md = path.join(folderPath, 'media')
+      const mediaDir = await pathExists(_md) ? _md : folderPath
       let media = { video: null, srt: null }
       if (await pathExists(mediaDir)) {
         const files = await fs.readdir(mediaDir)
@@ -1119,8 +1125,10 @@ export function registerFilesystemIPC(ipcMain) {
         srtContent = await fs.readFile(media.srt.path, 'utf-8')
       }
 
-      // 2. media/voices/ 스캔 (캐릭터별 서브폴더)
-      const voiceDir = path.join(folderPath, 'media', 'voices')
+      // 2. media/voices/ 스캔 — 상위 디렉토리(ep02/) 또는 media/ 직접 지정 둘 다 지원
+      const _vd1 = path.join(folderPath, 'media', 'voices')
+      const _vd2 = path.join(folderPath, 'voices')
+      const voiceDir = await pathExists(_vd1) ? _vd1 : _vd2
       const voices = []
       const sfxCategories = []
 
@@ -1171,7 +1179,9 @@ export function registerFilesystemIPC(ipcMain) {
       }
 
       // 2-b. media/sfx/ 카테고리별 하위 폴더 스캔
-      const sfxCatDir = path.join(folderPath, 'media', 'sfx')
+      const _sd1 = path.join(folderPath, 'media', 'sfx')
+      const _sd2 = path.join(folderPath, 'sfx')
+      const sfxCatDir = await pathExists(_sd1) ? _sd1 : _sd2
       if (await pathExists(sfxCatDir)) {
         const sfxEntries = await fs.readdir(sfxCatDir, { withFileTypes: true })
         for (const sfxEntry of sfxEntries) {
