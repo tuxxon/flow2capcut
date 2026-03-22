@@ -1,6 +1,6 @@
 # AutoFlowCut
 
-Google Flow AI로 이미지/비디오를 대량 생성하고, CapCut 영상 프로젝트로 원클릭 내보내기하는 데스크톱 앱.
+Google Flow AI로 이미지/비디오를 **대량 생성**하고, CapCut 영상 프로젝트로 원클릭 내보내기하는 데스크톱 앱.
 
 [![Release](https://img.shields.io/github/v/release/touchizen/AutoFlowCut)](https://github.com/touchizen/AutoFlowCut/releases)
 [![License](https://img.shields.io/badge/license-UNLICENSED-red)](LICENSE)
