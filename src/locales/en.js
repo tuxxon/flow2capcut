@@ -204,6 +204,10 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     retryOne: 'Retry',
     exportCapcut: 'CapCut Export',
     scenesComplete: '{done}/{total} scenes complete',
+    selectStyle: 'Select Style',
+    changeStyle: 'Change Style',
+    styleLabel: 'Style',
+    styleNone: 'None',
   },
 
   // Config (removed: aspectRatio, seed, method — now set directly in Flow UI)
@@ -226,6 +230,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     generatingScene: 'Generating: {ids} ({current}/{total})',
     retrying: 'Retrying: {id} ({count}/{max})',
     loginRequired: 'Login required - Please open labs.google tab',
+    styleRequired: 'Please select a style (Require Style is ON in Settings)',
     folderNotSet: 'Please select work folder in Settings',
     folderPermission: 'Work folder permission required',
     folderPermissionStopped: 'Work folder permission required. Generation stopped.',
@@ -299,6 +304,10 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     projectName: 'Project Name',
     exportThreshold: 'Export Button Display Threshold',
     exportThresholdHint: 'Show export button when this percentage of scenes complete successfully',
+
+    // Require style
+    requireStyle: 'Require Style',
+    requireStyleHint: 'ON: Block generation without style / OFF: Allow generation without style',
 
     // Batch count
     batchSettings: 'Batch Generation',

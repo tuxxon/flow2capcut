@@ -204,6 +204,10 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     retryOne: '재시도',
     exportCapcut: 'CapCut 내보내기',
     scenesComplete: '{done}/{total} 씬 완료',
+    selectStyle: '스타일 선택',
+    changeStyle: '스타일 변경',
+    styleLabel: '스타일',
+    styleNone: '없음',
   },
 
   // 설정 (화면비/Seed/방식은 Flow UI에서 직접 설정)
@@ -226,6 +230,7 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     generatingScene: '생성 중: {ids} ({current}/{total})',
     retrying: '재시도 중: {id} ({count}/{max})',
     loginRequired: '로그인 필요 - labs.google 탭을 열어주세요',
+    styleRequired: '스타일을 선택해주세요 (설정에서 스타일 필수가 ON입니다)',
     folderNotSet: '설정에서 작업 폴더를 선택하세요',
     folderPermission: '작업 폴더 권한이 필요합니다',
     folderPermissionStopped: '작업 폴더 권한이 필요합니다. 생성 중지됨.',
@@ -299,6 +304,10 @@ Ocean waves crashing against a lighthouse during a dramatic storm`,
     projectName: '프로젝트 이름',
     exportThreshold: '내보내기 버튼 표시 완료율',
     exportThresholdHint: '씬 생성 완료 후, 이 비율 이상 성공 시 내보내기 버튼 표시',
+
+    // 스타일 필수
+    requireStyle: '스타일 필수',
+    requireStyleHint: 'ON: 스타일 미선택 시 생성 차단 / OFF: 스타일 없이도 생성 가능',
 
     // 배치 카운트
     batchSettings: '배치 생성',

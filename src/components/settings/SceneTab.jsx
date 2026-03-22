@@ -45,6 +45,26 @@ export default function SceneTab({ localSettings, setLocalSettings, t }) {
         <span className="setting-sublabel">{t('settings.exportThresholdHint')}</span>
       </div>
 
+      {/* 스타일 필수 설정 */}
+      <div className="setting-row">
+        <label className="setting-label">{t('settings.requireStyle')}</label>
+        <div className="batch-selector">
+          <button
+            className={`batch-btn ${!localSettings.requireStyle ? 'active' : ''}`}
+            onClick={() => setLocalSettings(s => ({ ...s, requireStyle: false }))}
+          >
+            OFF
+          </button>
+          <button
+            className={`batch-btn ${localSettings.requireStyle ? 'active' : ''}`}
+            onClick={() => setLocalSettings(s => ({ ...s, requireStyle: true }))}
+          >
+            ON
+          </button>
+        </div>
+        <span className="setting-sublabel">{t('settings.requireStyleHint')}</span>
+      </div>
+
       {/* 배치 카운트 설정 */}
       <div className="settings-section">
         <h3>{t('settings.batchSettings')}</h3>

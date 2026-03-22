@@ -51,6 +51,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
    */
   const processScene = async (scene, options) => {
     let { projectName, saveMode, imageBatchCount, imageUpscale, selectedStyleRefId = null } = options
+    if (selectedStyleRefId != null && typeof selectedStyleRefId !== 'string') selectedStyleRefId = String(selectedStyleRefId)
 
     // selectedStyleRefId 없으면 등록된 style 카드 자동 탐색
     if (!selectedStyleRefId) {
@@ -250,6 +251,7 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
    */
   const runConcurrentQueue = async (targetScenes, options, total) => {
     let { projectName, saveMode, imageBatchCount, imageUpscale, selectedStyleRefId } = options
+    if (selectedStyleRefId != null && typeof selectedStyleRefId !== 'string') selectedStyleRefId = String(selectedStyleRefId)
     // selectedStyleRefId 없으면 등록된 style 카드 자동 탐색
     if (!selectedStyleRefId) {
       const autoStyle = references.find(r => r.type === 'style' && r.mediaId)
@@ -479,8 +481,9 @@ export function useAutomation(flowAPI, scenesHook, addToHistory, onOpenSettings 
       sceneIndices = null,
       imageBatchCount = 1,
       imageUpscale = 'off',
-      selectedStyleRefId = null
+      selectedStyleRefId: _selectedStyleRefId = null
     } = options
+    const selectedStyleRefId = (_selectedStyleRefId != null && typeof _selectedStyleRefId !== 'string') ? String(_selectedStyleRefId) : _selectedStyleRefId
 
     if (isRunning) return
 

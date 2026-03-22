@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { DEFAULTS, UI, TIMING } from './config/defaults'
+import { DEFAULTS, UI, TIMING, STYLE_PRESETS } from './config/defaults'
 import { useFlowAPI } from './hooks/useFlowAPI'
 import { useScenes } from './hooks/useScenes'
 import { useAutomation } from './hooks/useAutomation'
@@ -45,6 +45,7 @@ import TagValidationModal from './components/TagValidationModal'
 import AudioResultModal from './components/AudioResultModal'
 import AudioPanel from './components/AudioPanel'
 import { SubscriptionBanner } from './components/SubscriptionBanner'
+import StylePicker from './components/StylePicker'
 import Modal from './components/Modal'
 import { useAuth } from './contexts/AuthContext'
 
@@ -78,6 +79,7 @@ function App() {
       imageUpscale: 'off',   // 이미지 업스케일 해상도 ('off' | '2k' | '4k')
       videoBatchCount: 1,     // 비디오 배치 카운트 (x1~x4)
       videoResolution: '1080p', // 비디오 다운로드 해상도
+      requireStyle: false,    // 스타일 선택 필수 여부
       mcpHttpEnabled: false,  // MCP HTTP 서버 활성화
       mcpHttpPort: 3210       // MCP HTTP 서버 포트
     }
@@ -128,6 +130,7 @@ function App() {
   const [authReady, setAuthReady] = useState(false)
   const [selectedScene, setSelectedScene] = useState(null) // 상세 모달용 선택된 씬
   const [selectedStyleRefId, setSelectedStyleRefId] = useState(null) // 레퍼런스 생성 시 적용할 스타일
+  const [showStylePicker, setShowStylePicker] = useState(false) // 스타일 선택 모달
   const [selectedVideo, setSelectedVideo] = useState(null) // 비디오 상세 모달용
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() => {
     const saved = localStorage.getItem('flow2capcut_bottomPanelHeight')
@@ -596,14 +599,20 @@ function App() {
     switch (activeTab) {
       case 'text':
       case 'list': {
-        // 이미지 생성 — 태그 매칭 검증 후 시작
+        // 이미지 생성 — 스타일 필수 검증
+        const effectiveStyleId = overrideStyleId || selectedStyleRefId
+        if (settings.requireStyle && !effectiveStyleId) {
+          setShowStylePicker(true)
+          return
+        }
+
         const startOptions = {
           projectName,
           saveMode: settings.saveMode,
           concurrency: settings.concurrency || 2,
           imageBatchCount: settings.imageBatchCount || 1,
           imageUpscale: settings.imageUpscale || 'off',
-          selectedStyleRefId: overrideStyleId || selectedStyleRefId,
+          selectedStyleRefId: effectiveStyleId,
         }
 
         const errors = collectTagErrors(scenes, scenesHook.references)
@@ -1041,14 +1050,36 @@ function App() {
                 ) : (
                   <button
                     className={`btn-primary ${canExport ? 'half' : ''}`}
-                    onClick={handleStart}
+                    onClick={() => handleStart()}
                     disabled={
                       ((activeTab === 'text' || activeTab === 'list') && scenes.length === 0) ||
                       (activeTab === 'video-text' && videoScenes.length === 0) ||
                       (activeTab === 'frame-to-video' && framePairs.length === 0)
                     }
                   >
-                    {(activeTab === 'text' || activeTab === 'list') ? `✨ ${t('actions.start')}` : `🎬 ${t('actions.start')}`}
+                    {(activeTab === 'text' || activeTab === 'list')
+                      ? <>
+                          ✨ {t('actions.start')}
+                          ▸
+                          <span className="btn-style-link" onClick={(e) => { e.stopPropagation(); setShowStylePicker(true) }}>
+                            🎨 {(() => {
+                              if (!selectedStyleRefId) return t('actions.styleNone')
+                              if (selectedStyleRefId.startsWith('ref:')) {
+                                const refId = selectedStyleRefId.replace('ref:', '')
+                                const ref = references.find(r => String(r.id) === refId && r.type === 'style')
+                                return ref?.name || refId
+                              }
+                              if (selectedStyleRefId.startsWith('preset:')) {
+                                const presetId = selectedStyleRefId.replace('preset:', '')
+                                const preset = STYLE_PRESETS?.styles?.find(s => s.id === presetId)
+                                const isKo = t('common.cancel') === '취소'
+                                return isKo ? (preset?.name_ko || presetId) : (preset?.name_en || presetId)
+                              }
+                              return selectedStyleRefId
+                            })()}
+                          </span>
+                        </>
+                      : `🎬 ${t('actions.start')}`}
                   </button>
                 )}
 
@@ -1232,6 +1263,42 @@ function App() {
           t={t}
         />
       )}
+
+      <Modal
+        isOpen={showStylePicker}
+        onClose={() => setShowStylePicker(false)}
+        title={`🎨 ${t('actions.selectStyle')}`}
+        className="style-picker-modal"
+      >
+        <StylePicker
+          selectedId={selectedStyleRefId}
+          onSelect={(id) => {
+            setSelectedStyleRefId(id)
+            if (id) {
+              setShowStylePicker(false)
+              handleStart(id)
+            }
+          }}
+          thumbnails={styleThumbnails}
+          uploadedStyleRefs={references.filter(r => r.type === 'style')}
+          generating={thumbnailGenerating}
+          stopping={thumbnailStopping}
+          progress={thumbnailProgress}
+          onGenerateThumbnails={async (presetIds, customRefs) => {
+            const customResults = await generateThumbnails(presetIds, customRefs, t)
+            if (customResults?.length > 0) {
+              setReferences(prev => prev.map(ref => {
+                const result = customResults.find(r => r.refId === ref.id)
+                return result ? { ...ref, data: result.data, filePath: null, dataStorage: null } : ref
+              }))
+            }
+          }}
+          onStopGenerating={stopThumbnailGeneration}
+          onDeleteThumbnail={deleteThumbnail}
+          t={t}
+          isKo={t('common.cancel') === '취소'}
+        />
+      </Modal>
 
       {showAudioResult && (
         <AudioResultModal
