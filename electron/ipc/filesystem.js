@@ -243,18 +243,18 @@ export function registerFilesystemIPC(ipcMain) {
 
   // ----------------------------------------------------------
   // 0. fs:get-default-work-folder — 기본 작업 폴더 경로 반환 + 생성
-  //    Mac: ~/Documents/flow2capcut
-  //    Windows: C:\Users\{user}\Documents\flow2capcut
+  //    Mac: ~/Documents/AutoFlowCut
+  //    Windows: C:\Users\{user}\Documents\AutoFlowCut
   // ----------------------------------------------------------
   ipcMain.handle('fs:get-default-work-folder', async () => {
     try {
       const documentsPath = app.getPath('documents')
-      const defaultFolder = path.join(documentsPath, 'flow2capcut')
+      const defaultFolder = path.join(documentsPath, 'AutoFlowCut')
 
       // 폴더가 없으면 생성
       await fs.mkdir(defaultFolder, { recursive: true })
 
-      return { success: true, path: defaultFolder, name: 'flow2capcut' }
+      return { success: true, path: defaultFolder, name: 'AutoFlowCut' }
     } catch (error) {
       return { success: false, error: error.message }
     }
